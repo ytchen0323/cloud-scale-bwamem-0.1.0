@@ -24,115 +24,167 @@ import java.net.ServerSocket
 // Used for read test input data
 import java.io.{FileReader, BufferedReader}
 
+// JNI function for SWExtend
+import cs.ucla.edu.bwaspark.jni.SWExtendFPGAJNI
+
+
 object MemChainToAlignBatched {
   val MAX_BAND_TRY = 2    
   val MARKED = -2
-
-  /**
-    *  Read class (testing use)
-    */
-  class ReadChain(chains_i: MutableList[MemChainType], seq_i: Array[Byte]) {
-    var chains: MutableList[MemChainType] = chains_i
-    var seq: Array[Byte] = seq_i
-  }
-
-  /**
-    *  Member variable of all reads (testing use)
-    */ 
-  var testReadChains: MutableList[ReadChain] = new MutableList
-  
-  /**
-    *  Read the test chain data generated from bwa-0.7.8 (C version) (testing use)
-    *
-    *  @param fileName the test data file name
-    */
-  def readTestData(fileName: String) {
-    val reader = new BufferedReader(new FileReader(fileName))
-
-    var line = reader.readLine
-    var chains: MutableList[MemChainType] = new MutableList
-    var chainPos: Long = 0
-    var seeds: MutableList[MemSeedType] = new MutableList
-    var seq: Array[Byte] = new Array[Byte](101) // assume the size to be 101 (not true for all kinds of reads)
-
-    while(line != null) {
-      val lineFields = line.split(" ")      
-
-      // Find a sequence
-      if(lineFields(0) == "Sequence") {
-        chains = new MutableList
-        seq = lineFields(2).getBytes
-        seq = seq.map(s => (s - 48).toByte) // ASCII => Byte(Int)
-      }
-      // Find a chain
-      else if(lineFields(0) == "Chain") {
-        seeds = new MutableList
-        chainPos = lineFields(1).toLong
-      }
-      // Fina a seed
-      else if(lineFields(0) == "Seed") {
-        seeds += (new MemSeedType(lineFields(1).toLong, lineFields(2).toInt, lineFields(3).toInt))
-      }
-      // append the current list
-      else if(lineFields(0) == "ChainEnd") {
-        val cur_seeds = seeds
-        chains += (new MemChainType(chainPos, cur_seeds))
-      }
-      // append the current list
-      else if(lineFields(0) == "SequenceEnd") {
-        val cur_chains = chains
-        val cur_seq = seq 
-        testReadChains += (new ReadChain(cur_chains, seq))
-      }
-
-      line = reader.readLine
-    }
-
-  }
-
-
-  /**
-    *  Print all the chains (and seeds) from all input reads 
-    *  (Only for testing use)
-    */
-  def printAllReads() {
-    def printChains(chains: MutableList[MemChainType]) {
-      println("Sequence");
-      def printSeeds(seeds: MutableList[MemSeedType]) {
-        seeds.foreach(s => println("Seed " + s.rBeg + " " + s.qBeg + " " + s.len))
-      }
-    
-      chains.map(p => {
-        println("Chain " + p.pos + " " + p.seeds.length)
-        printSeeds(p.seeds)
-                      } )
-    }
-
-    testReadChains.foreach(r => printChains(r.chains))
-  }
-
-  //to be modified: useFPGA decides whether FPGA or CPU will be used for computation
-  //val useFPGA = false
-  val useFPGA = true
-
-  //Sizes of Kernel Components
+  // Use for FPGA Kernel
   val commonSize = 32
   val indivSize = 32
   val retValues = 8
+  val FPGA_RET_PARAM_NUM = 5
+
+  //Run DPs on FPGA
+  def runOnFPGAJNI(taskNum: Int, //number of tasks
+                   tasks: Array[ExtParam], // task array
+                   results: Array[ExtRet] // result array
+                  ) {
+    def int2ByteArray(arr: Array[Byte], idx: Int, num: Int): Int = {
+      arr(idx) = (num & 0xff).toByte
+      arr(idx+1) = ((num >> 8) & 0xff).toByte
+      arr(idx+2) = ((num >> 16) & 0xff).toByte
+      arr(idx+3) = ((num >> 24) & 0xff).toByte
+      idx+4
+    }
+    def short2ByteArray(arr: Array[Byte], idx: Int, num: Short): Int = {
+      arr(idx) = (num & 0xff).toByte
+      arr(idx+1) = ((num >> 8) & 0xff).toByte
+      idx+2
+    }
+
+    val buf1Len = commonSize + indivSize*taskNum
+    val buf1 = new Array[Byte](buf1Len)
+    buf1(0) = (tasks(0).oDel.toByte)
+    buf1(1) = (tasks(0).eDel.toByte)
+    buf1(2) = (tasks(0).oIns.toByte)
+    buf1(3) = (tasks(0).eIns.toByte)
+    buf1(4) = (tasks(0).penClip5.toByte)
+    buf1(5) = (tasks(0).penClip3.toByte)
+    buf1(6) = (tasks(0).w.toByte)
+    int2ByteArray(buf1, 8, taskNum) //8,9,10,11
+
+    var i = 0
+    var leftMaxIns = 0
+    var leftMaxDel = 0
+    var rightMaxIns = 0
+    var rightMaxDel = 0
+    var taskPos = buf1Len >> 2
+    var buf1Idx = 32
+
+    while (i < taskNum) {
+      buf1Idx = short2ByteArray(buf1, buf1Idx, tasks(i).leftQlen.toShort)
+      buf1Idx = short2ByteArray(buf1, buf1Idx, tasks(i).leftRlen.toShort)
+      buf1Idx = short2ByteArray(buf1, buf1Idx, tasks(i).rightQlen.toShort)
+      buf1Idx = short2ByteArray(buf1, buf1Idx, tasks(i).rightRlen.toShort)
+      buf1Idx = int2ByteArray(buf1, buf1Idx, taskPos)
+      taskPos += ((((tasks(i).leftQlen + tasks(i).leftRlen + tasks(i).rightQlen + tasks(i).rightRlen)+1)/2)+3)/4
+      buf1Idx = short2ByteArray(buf1, buf1Idx, tasks(i).regScore.toShort)
+      buf1Idx = short2ByteArray(buf1, buf1Idx, tasks(i).qBeg.toShort)
+      buf1Idx = short2ByteArray(buf1, buf1Idx, tasks(i).h0.toShort)
+      buf1Idx = short2ByteArray(buf1, buf1Idx, tasks(i).idx.toShort)
+      leftMaxIns = ((tasks(i).leftQlen * tasks(i).mat.max + tasks(i).penClip5 - tasks(i).oIns).toDouble / tasks(i).eIns + 1).toInt
+      leftMaxDel = ((tasks(i).leftQlen * tasks(i).mat.max + tasks(i).penClip5 - tasks(i).oDel).toDouble / tasks(i).eDel + 1).toInt
+      rightMaxIns = ((tasks(i).rightQlen * tasks(i).mat.max + tasks(i).penClip3 - tasks(i).oIns).toDouble / tasks(i).eIns + 1).toInt
+      rightMaxDel = ((tasks(i).rightQlen * tasks(i).mat.max + tasks(i).penClip3 - tasks(i).oDel).toDouble / tasks(i).eDel + 1).toInt
+      buf1Idx = short2ByteArray(buf1, buf1Idx, leftMaxIns.toShort)
+      buf1Idx = short2ByteArray(buf1, buf1Idx, leftMaxDel.toShort)
+      buf1Idx = short2ByteArray(buf1, buf1Idx, rightMaxIns.toShort)
+      buf1Idx = short2ByteArray(buf1, buf1Idx, rightMaxDel.toShort)
+      buf1Idx = int2ByteArray(buf1, buf1Idx, tasks(i).idx)
+
+      i = i+1
+    }
+
+    val buf2 = new Array[Byte]((taskPos<<2)-buf1Len)
+    var buf2Idx = 0
+    i = 0
+    var j = 0
+    var tmpIntVar = 0
+    var counter8 = 0
+    while (i < taskNum) {
+      if (tasks(i).leftQlen > 0) {
+        j = 0
+        while (j < tasks(i).leftQlen) {
+            counter8 = counter8 + 1
+            tmpIntVar = tmpIntVar << 4 | (tasks(i).leftQs(j).toInt & 0x0F)
+            if (counter8 % 8 == 0) buf2Idx = int2ByteArray(buf2, buf2Idx, tmpIntVar)
+            j = j + 1
+        }
+      }
+      if (tasks(i).rightQlen > 0) {
+        j = 0
+        while (j < tasks(i).rightQlen) {
+            counter8 = counter8 + 1
+            tmpIntVar = tmpIntVar << 4 | (tasks(i).rightQs(j).toInt & 0x0F)
+            if (counter8 % 8 == 0) buf2Idx = int2ByteArray(buf2, buf2Idx, tmpIntVar)
+            j = j + 1
+        }
+      }
+      if (tasks(i).leftRlen > 0) {
+        j = 0
+        while (j < tasks(i).leftRlen) {
+            counter8 = counter8 + 1
+            tmpIntVar = tmpIntVar << 4 | (tasks(i).leftRs(j).toInt & 0x0F)
+            if (counter8 % 8 == 0) buf2Idx = int2ByteArray(buf2, buf2Idx, tmpIntVar)
+            j = j + 1
+        }
+      }
+      if (tasks(i).rightRlen > 0) {
+        j = 0
+        while (j < tasks(i).rightRlen) {
+            counter8 = counter8 + 1
+            tmpIntVar = tmpIntVar << 4 | (tasks(i).rightRs(j).toInt & 0x0F)
+            if (counter8 % 8 == 0) buf2Idx = int2ByteArray(buf2, buf2Idx, tmpIntVar)
+            j = j + 1
+        }
+      }
+      if (counter8 % 8 != 0) {
+        while (counter8 % 8 != 0) {
+            tmpIntVar = tmpIntVar << 4
+            counter8 = counter8 + 1
+        }
+        buf2Idx = int2ByteArray(buf2, buf2Idx, tmpIntVar)
+      }
+      i = i + 1
+    }
+
+    val buf2Host = Array.concat(buf1, buf2)
+
+    // JNI
+    val jni = new SWExtendFPGAJNI
+    val bufRet = jni.swExtendFPGAJNI(taskNum * FPGA_RET_PARAM_NUM * 2, buf2Host)  // taskNum * FPGA_RET_PARAM_NUM * 2 == NUM of short integers to be returned
+
+    i = 0
+    while (i < taskNum) {
+      if (results(i) == null) results(i) = new ExtRet
+      results(i).idx = ((bufRet(1+FPGA_RET_PARAM_NUM*2*i).toInt) << 16) | bufRet(0+FPGA_RET_PARAM_NUM*2*i).toInt
+      results(i).qBeg = bufRet(2+FPGA_RET_PARAM_NUM*2*i)
+      results(i).qEnd = bufRet(3+FPGA_RET_PARAM_NUM*2*i)
+      results(i).rBeg = bufRet(4+FPGA_RET_PARAM_NUM*2*i)
+      results(i).rEnd = bufRet(5+FPGA_RET_PARAM_NUM*2*i)
+      results(i).score = bufRet(6+FPGA_RET_PARAM_NUM*2*i)
+      results(i).trueScore = bufRet(7+FPGA_RET_PARAM_NUM*2*i)
+      results(i).width = bufRet(8+FPGA_RET_PARAM_NUM*2*i)
+      i = i+1
+    }
+  }
+
 
   //Run DPs on FPGA
   def runOnFPGA(taskNum: Int, //number of tasks
+		TOTAL_TASK_NUM: Int,
                 tasks: Array[ExtParam], // task array
                 results: Array[ExtRet] // result array
                 ) {
-      //val timer1 = new MyTimer( );
-      val writer = System.out;
-      //writer.println("Start call FPGA");
-      val conn = new Connector2FPGA("127.0.0.1", 5000);
-      conn.buildConnection( 1 );
+      //Sizes of Kernel Components
+      val DATA_SIZE = TOTAL_TASK_NUM * 256
+      val RESULT_SIZE = TOTAL_TASK_NUM * 16
 
       val buf1Len = commonSize + indivSize*taskNum
-      val buf1 = ByteBuffer.allocate(buf1Len).order(ByteOrder.nativeOrder())
+      val buf1 = ByteBuffer.allocate(DATA_SIZE).order(ByteOrder.nativeOrder())
       buf1.put(tasks(0).oDel.toByte)
       buf1.put(tasks(0).eDel.toByte)
       buf1.put(tasks(0).oIns.toByte)
@@ -147,7 +199,6 @@ object MemChainToAlignBatched {
       buf1.putInt(0)
       buf1.putInt(0)
       buf1.putInt(0)
-
       var i = 0
       var leftMaxIns = 0
       var leftMaxDel = 0
@@ -160,7 +211,7 @@ object MemChainToAlignBatched {
         buf1.putShort(tasks(i).rightQlen.toShort)
         buf1.putShort(tasks(i).rightRlen.toShort)
         buf1.putInt(taskPos)
-        taskPos += (tasks(i).leftQlen + tasks(i).leftRlen + tasks(i).rightQlen + tasks(i).rightRlen)
+        taskPos += ((((tasks(i).leftQlen + tasks(i).leftRlen + tasks(i).rightQlen + tasks(i).rightRlen)+1)/2)+3)/4
         buf1.putShort(tasks(i).regScore.toShort)
         buf1.putShort(tasks(i).qBeg.toShort)
         buf1.putShort(tasks(i).h0.toShort)
@@ -173,42 +224,73 @@ object MemChainToAlignBatched {
         buf1.putShort(leftMaxDel.toShort)
         buf1.putShort(rightMaxIns.toShort)
         buf1.putShort(rightMaxDel.toShort)
-        buf1.putInt(0)
+	buf1.putInt(tasks(i).idx)
 
         i = i+1
       }
-      //timer1.report( );
-	    //writer.println("Start writing parameters");
-      conn.send(taskNum)
-      conn.send(buf1);
-      taskPos -= (buf1Len >> 2) 
-      val buf2 = ByteBuffer.allocate(taskPos*4).order(ByteOrder.nativeOrder())
       i = 0
+      var j = 0
+      var tmpIntVar = 0
+      var counter8 = 0
       while (i < taskNum) {
         if (tasks(i).leftQlen > 0) {
-          assert (tasks(i).leftQs.length == tasks(i).leftQlen)
-          tasks(i).leftQs.foreach(ele => {buf2.putInt(ele.toInt)})
+          //assert (tasks(i).leftQs.length == tasks(i).leftQlen)
+          j = 0
+          while (j < tasks(i).leftQlen) {
+              counter8 = counter8 + 1
+              tmpIntVar = tmpIntVar << 4 | (tasks(i).leftQs(j).toInt & 0x0F)
+              if (counter8 % 8 == 0) buf1.putInt(tmpIntVar)
+              j = j + 1
+          }
+          //tasks(i).leftQs.foreach(ele => {buf1.putInt(ele.toInt)})
         }
         if (tasks(i).rightQlen > 0) {
-          assert (tasks(i).rightQs.length == tasks(i).rightQlen)
-          tasks(i).rightQs.foreach(ele => {buf2.putInt(ele.toInt)})
+          //assert (tasks(i).rightQs.length == tasks(i).rightQlen)
+          j = 0
+          while (j < tasks(i).rightQlen) {
+              counter8 = counter8 + 1
+              tmpIntVar = tmpIntVar << 4 | (tasks(i).rightQs(j).toInt & 0x0F)
+              if (counter8 % 8 == 0) buf1.putInt(tmpIntVar)
+              j = j + 1
+          }
+          //tasks(i).rightQs.foreach(ele => {buf1.putInt(ele.toInt)})
         }
         if (tasks(i).leftRlen > 0) {
-          assert (tasks(i).leftRs.length == tasks(i).leftRlen)
-          tasks(i).leftRs.foreach(ele => {buf2.putInt(ele.toInt)})
+          //assert (tasks(i).leftRs.length == tasks(i).leftRlen)
+          j = 0
+          while (j < tasks(i).leftRlen) {
+              counter8 = counter8 + 1
+              tmpIntVar = tmpIntVar << 4 | (tasks(i).leftRs(j).toInt & 0x0F)
+              if (counter8 % 8 == 0) buf1.putInt(tmpIntVar)
+              j = j + 1
+          }
+          //tasks(i).leftRs.foreach(ele => {buf1.putInt(ele.toInt)})
         }
         if (tasks(i).rightRlen > 0) {
-          assert (tasks(i).rightRs.length == tasks(i).rightRlen)
-          tasks(i).rightRs.foreach(ele => {buf2.putInt(ele.toInt)})
+          //assert (tasks(i).rightRs.length == tasks(i).rightRlen)
+          j = 0
+          while (j < tasks(i).rightRlen) {
+              counter8 = counter8 + 1
+              tmpIntVar = tmpIntVar << 4 | (tasks(i).rightRs(j).toInt & 0x0F)
+              if (counter8 % 8 == 0) buf1.putInt(tmpIntVar)
+              j = j + 1
+          }
+          //tasks(i).rightRs.foreach(ele => {buf1.putInt(ele.toInt)})
         }
+        if (counter8 % 8 != 0) {
+          while (counter8 % 8 != 0) {
+              tmpIntVar = tmpIntVar << 4
+              counter8 = counter8 + 1
+          }
+          buf1.putInt(tmpIntVar)
+	}
         i = i + 1
       }
-	    //writer.println("Start writing queries and targets");
-      conn.send(taskPos)
-      conn.send(buf2);
 
-      //writer.println("data transferred");
-      //timer1.report( );
+      val conn = new Connector2FPGA("127.0.0.1", 5555);
+      conn.buildConnection( 1 );
+      conn.send(taskPos*4)
+      conn.send(buf1, taskPos*4);
 
       val bufRet = conn.receive_short(taskNum * retValues)
       i = 0
@@ -231,7 +313,6 @@ object MemChainToAlignBatched {
 
       conn.closeConnection();
 
-      //writer.close();
   }
 
   /**
@@ -286,7 +367,9 @@ object MemChainToAlignBatched {
                            numOfReads: Int,
                            preResultsOfSW: Array[Array[SWPreResultType]],
                            chainsFilteredArray: Array[Array[MemChainType]],
-                           regArrays: Array[MemAlnRegArrayType]
+                           regArrays: Array[MemAlnRegArrayType],
+			   useFPGA: Boolean,
+			   threshold: Int
                           ){
 
     // The coordinate for each read: (chain No., seed No.)
@@ -464,37 +547,28 @@ object MemChainToAlignBatched {
 	}
 	i = i+1
       }
+
       if (useFPGA == true) {
-        if (taskIdx != 0)
-          runOnFPGA(taskIdx, fpgaExtTasks, fpgaExtResults)
-        //verification
-        //i = 0
-        //var verifiedRes: ExtRet = null
-        //while (i < taskIdx) {
-        //  fpgaExtTasks(i).display
-        //  fpgaExtResults(i).display
-        //  verifiedRes = extension(fpgaExtTasks(i))
-        //  verifiedRes.display
-        //  assert (verifiedRes.qBeg == fpgaExtResults(i).qBeg)
-        //  assert (verifiedRes.rBeg == fpgaExtResults(i).rBeg)
-        //  assert (verifiedRes.qEnd == fpgaExtResults(i).qEnd)
-        //  assert (verifiedRes.rEnd == fpgaExtResults(i).rEnd)
-        //  assert (verifiedRes.score == fpgaExtResults(i).score)
-        //  assert (verifiedRes.trueScore == fpgaExtResults(i).trueScore)
-        //  assert (verifiedRes.width == fpgaExtResults(i).width)
-        //  assert (verifiedRes.idx == fpgaExtResults(i).idx)
-        //  i += 1
-        //}
+        if (taskIdx >= threshold) {
+          //val ret = runOnFPGA(taskIdx, numOfReads, fpgaExtTasks, fpgaExtResults)
+          val ret = runOnFPGAJNI(taskIdx, fpgaExtTasks, fpgaExtResults)
+	}
+	else {
+          i = 0;
+          while (i < taskIdx) {
+              fpgaExtResults(i) = extension(fpgaExtTasks(i))
+              i = i+1
+          }
+	}
       }
       else {
         i = 0;
         while (i < taskIdx) {
-            fpgaExtTasks(i).display()
             fpgaExtResults(i) = extension(fpgaExtTasks(i))
-            fpgaExtResults(i).display()
             i = i+1
         }
       }
+
       i = 0;
       while (i < taskIdx) {
         var tmpIdx = fpgaExtResults(i).idx
@@ -813,6 +887,90 @@ object MemChainToAlignBatched {
     }
 
     seedcov
+  }
+
+
+  /**
+    *  Read class (testing use)
+    */
+  class ReadChain(chains_i: MutableList[MemChainType], seq_i: Array[Byte]) {
+    var chains: MutableList[MemChainType] = chains_i
+    var seq: Array[Byte] = seq_i
+  }
+
+  /**
+    *  Member variable of all reads (testing use)
+    */ 
+  var testReadChains: MutableList[ReadChain] = new MutableList
+  
+  /**
+    *  Read the test chain data generated from bwa-0.7.8 (C version) (testing use)
+    *
+    *  @param fileName the test data file name
+    */
+  def readTestData(fileName: String) {
+    val reader = new BufferedReader(new FileReader(fileName))
+
+    var line = reader.readLine
+    var chains: MutableList[MemChainType] = new MutableList
+    var chainPos: Long = 0
+    var seeds: MutableList[MemSeedType] = new MutableList
+    var seq: Array[Byte] = new Array[Byte](101)  // assume the size to be 101 (not true for all kinds of reads)
+
+    while(line != null) {
+      val lineFields = line.split(" ")      
+
+      // Find a sequence
+      if(lineFields(0) == "Sequence") {
+        chains = new MutableList
+        seq = lineFields(2).getBytes
+        seq = seq.map(s => (s - 48).toByte) // ASCII => Byte(Int)
+      }
+      // Find a chain
+      else if(lineFields(0) == "Chain") {
+        seeds = new MutableList
+        chainPos = lineFields(1).toLong
+      }
+      // Fina a seed
+      else if(lineFields(0) == "Seed") {
+        seeds += (new MemSeedType(lineFields(1).toLong, lineFields(2).toInt, lineFields(3).toInt))
+      }
+      // append the current list
+      else if(lineFields(0) == "ChainEnd") {
+        val cur_seeds = seeds
+        chains += (new MemChainType(chainPos, cur_seeds))
+      }
+      // append the current list
+      else if(lineFields(0) == "SequenceEnd") {
+        val cur_chains = chains
+        val cur_seq = seq 
+        testReadChains += (new ReadChain(cur_chains, seq))
+      }
+
+      line = reader.readLine
+    }
+
+  }
+
+
+  /**
+    *  Print all the chains (and seeds) from all input reads 
+    *  (Only for testing use)
+    */
+  def printAllReads() {
+    def printChains(chains: MutableList[MemChainType]) {
+      println("Sequence");
+      def printSeeds(seeds: MutableList[MemSeedType]) {
+        seeds.foreach(s => println("Seed " + s.rBeg + " " + s.qBeg + " " + s.len))
+      }
+    
+      chains.map(p => {
+        println("Chain " + p.pos + " " + p.seeds.length)
+        printSeeds(p.seeds)
+                      } )
+    }
+
+    testReadChains.foreach(r => printChains(r.chains))
   }
 
 }
