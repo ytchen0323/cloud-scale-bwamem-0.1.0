@@ -1,0 +1,18 @@
+#PBS -N csbwamem
+#PBS -o /scratch/jmg3/stdout
+#PBS -e /scratch/jmg3/stderr
+#PBS -q parallel
+#PBS -l walltime=2:00:00
+#PBS -l nodes=4:ppn=12
+#PBS -M jmg3@rice.edu
+#PBS -m abe
+
+source ~/.bash_profile
+
+force_kill.sh
+setup_all.sh
+
+cd /home/jmg3/cloud-scale-bwamem-0.1.0/ && time ./pair-end_csbwamem_flow.sh upload
+cd /home/jmg3/cloud-scale-bwamem-0.1.0/ && time ./pair-end_csbwamem_flow.sh kernel
+
+force_kill.sh
