@@ -14,7 +14,6 @@ import cs.ucla.edu.bwaspark.debug.DebugFlag._
 import cs.ucla.edu.bwaspark.fastq._
 import cs.ucla.edu.avro.fastq._
 import cs.ucla.edu.bwaspark.FastMap.memMain
-import cs.ucla.edu.bwaspark.FastMapProfile.memMainProfile
 import cs.ucla.edu.bwaspark.commandline._
 import cs.ucla.edu.bwaspark.dnaseq._
 
@@ -44,8 +43,6 @@ object BWAMEMSpark {
                                nextOption(map ++ Map('outputPath -> value), tail)
         case "-R" :: value :: tail =>
                                nextOption(map ++ Map('headerLine -> value), tail)
-        case "-isSWExtBatched" :: value :: tail =>
-                               nextOption(map ++ Map('isSWExtBatched -> value.toInt), tail)
         case "-bSWExtSize" :: value :: tail =>
                                nextOption(map ++ Map('swExtBatchSize -> value.toInt), tail)
         case "-FPGAAccSWExt" :: value :: tail =>
@@ -104,20 +101,11 @@ object BWAMEMSpark {
       }
       bwamemArgs.outputChoice = outputChoice
     }
-    if(options.get('outputPath) != None)
+    if(options.get('outputPath) != None) {
       bwamemArgs.outputPath = options('outputPath).toString
-    if(options.get('headerLine) != None)
+    }
+    if(options.get('headerLine) != None) {
       bwamemArgs.headerLine = options('headerLine).toString
-    if(options.get('isSWExtBatched) != None) {
-      val isSWExtBatched = options('isSWExtBatched).toString.toInt
-      if(isSWExtBatched == 0)
-        bwamemArgs.isSWExtBatched = false
-      else if(isSWExtBatched == 1)
-        bwamemArgs.isSWExtBatched = true
-      else {
-        println("[Error] Undefined -isSWExtBatched argument" + isSWExtBatched)
-        exit(1)
-      }
     }
     if(options.get('swExtBatchSize) != None) 
       bwamemArgs.swExtBatchSize = options('swExtBatchSize).toString.toInt
@@ -227,7 +215,7 @@ object BWAMEMSpark {
                       "Optional arguments: \n" +
                       "-bn (optional): the number of lines to be read in one group (batch)\n\n\n" +
                       "Usage 2: use CS-BWAMEM aligner\n" +
-                      "Usage: cs-bwamem [-bfn INT] [-bPSW (0/1)] [-sbatch INT] [-bPSWJNI (0/1)] [-jniPath STRING] [-oType (0/1/2)] [-oPath STRING] [-R STRING] [-isSWExtBatched (0/1)] [-bSWExtSize INT] [-FPGAAcc (0/1)] isPairEnd fastaInputPath fastqHDFSInputPath fastqInputFolderNum\n\n" +
+                      "Usage: cs-bwamem [-bfn INT] [-bPSW (0/1)] [-sbatch INT] [-bPSWJNI (0/1)] [-jniPath STRING] [-oType (0/1/2)] [-oPath STRING] [-R STRING] [-bSWExtSize INT] [-FPGAAcc (0/1)] isPairEnd fastaInputPath fastqHDFSInputPath fastqInputFolderNum\n\n" +
                       "Required arguments (in the following order): \n" +
                       "isPairEnd: perform pair-end (1) or single-end (0) mapping\n" +
                       "fastaInputPath: the path of (local) BWA index files (bns, pac, and so on)\n" +
@@ -246,9 +234,6 @@ object BWAMEMSpark {
                       "                   3: SAM format output in the distributed file system\n" +
                       "-oPath (optional): the output path; users need to provide correct path in the local or distributed file system\n\n" +
                       "-R (should be added for common case): Complete read group header line. Example: @RG\tID:foo\tSM:bar\n\n" +
-                      "-isSWExtBatched (optional): whether the SWExtend is executed in a batched way\n" +
-                      "                   0: No (default)\n" +
-                      "                   1: Yes\n\n" +
                       "-bSWExtSize (optional): the batch size used for SWExtend\n\n" +
                       "-FPGAAccSWExt (optional): whether the FPGA accelerator is used for accelerating SWExtend\n" +
                       "                   0: No (default)\n" +
@@ -268,7 +253,6 @@ object BWAMEMSpark {
         case "cs-bwamem" => cmd
         case "merge" => cmd
         case "sort" => cmd
-        case "cs-bwamem-profile" => cmd
         case "help" => println(usage)
                          exit(1)
         case _ => println("Unknown command " + cmd)
@@ -294,7 +278,6 @@ object BWAMEMSpark {
     if(command == "upload-fastq") uploadFASTQArgs = uploadFASTQCmdLineParser(argsList.tail)
     else if(command == "cs-bwamem") bwamemArgs = bwamemCmdLineParser(argsList.tail)
     else if(command == "sort" || command == "merge") sortArgs = sortADAMCmdLineParser(argsList.tail)
-    else if(command == "cs-bwamem-profile") bwamemArgs = bwamemCmdLineParser(argsList.tail)
     else { 
       println("Unknown command " + command)
       exit(1)
@@ -321,17 +304,6 @@ object BWAMEMSpark {
       
       memMain(sc, bwamemArgs) 
       println("CS-BWAMEM Finished!!!")
-
-      // NOTE: Some of the Spark tasks are in "GET RESULT" status and cause the pending state... 
-      //       However, the data are returned. Therefore, we enforce program to exit.
-      exit(1)
-    }
-    else if(command == "cs-bwamem-profile") {
-      val conf = new SparkConf().setAppName("Cloud-Scale BWAMEM: cs-bwamem-profile")
-      val sc = new SparkContext(conf)
-      
-      memMainProfile(sc, bwamemArgs) 
-      println("CS-BWAMEM Profiling Finished!!!")
 
       // NOTE: Some of the Spark tasks are in "GET RESULT" status and cause the pending state... 
       //       However, the data are returned. Therefore, we enforce program to exit.

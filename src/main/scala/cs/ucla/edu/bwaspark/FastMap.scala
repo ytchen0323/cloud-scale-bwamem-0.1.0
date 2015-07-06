@@ -7,7 +7,6 @@ import org.apache.spark.rdd.RDD
 
 import cs.ucla.edu.bwaspark.datatype._
 import cs.ucla.edu.bwaspark.worker1.BWAMemWorker1._
-import cs.ucla.edu.bwaspark.worker1.BWAMemWorker1Batched._
 import cs.ucla.edu.bwaspark.worker2.BWAMemWorker2._
 import cs.ucla.edu.bwaspark.worker2.MemSamPe._
 import cs.ucla.edu.bwaspark.sam.SAMHeader
@@ -285,7 +284,6 @@ object FastMap {
     val jniLibPath = bwamemArgs.jniLibPath                     // the JNI library path in the local machine
     val outputChoice = bwamemArgs.outputChoice                 // the output format choice
     val outputPath = bwamemArgs.outputPath                     // the output path in the local or distributed file system
-    val isSWExtBatched = bwamemArgs.isSWExtBatched             // whether the SWExtend is executed in a batched way
     val swExtBatchSize = bwamemArgs.swExtBatchSize             // the batch size used for used for SWExtend
     val isFPGAAccSWExtend = bwamemArgs.isFPGAAccSWExtend       // whether the FPGA accelerator is used for accelerating SWExtend
     val fpgaSWExtThreshold = bwamemArgs.fpgaSWExtThreshold     // the threshold of using FPGA accelerator for SWExtend
@@ -355,41 +353,9 @@ object FastMap {
       println("@Worker1") 
       var reads: RDD[PairEndReadType] = null
 
-      // SWExtend() is not processed in a batched way (by default)
-      if(!isSWExtBatched) {
-        reads = pairEndFASTQRDD.map( pairSeq => pairEndBwaMemWorker1(bwaMemOptGlobal.value, bwaIdxGlobal.value.bwt, bwaIdxGlobal.value.bns, bwaIdxGlobal.value.pac, null, pairSeq) ) 
-      }
-      // SWExtend() is processed in a batched way. FPGA accelerating may be applied
-      else {
-        def it2ArrayIt_W1(iter: Iterator[PairEndFASTQRecord]): Iterator[Array[PairEndReadType]] = {
-          val batchedDegree = swExtBatchSize
-          var counter = 0
-          var ret: Vector[Array[PairEndReadType]] = scala.collection.immutable.Vector.empty
-          var end1 = new Array[FASTQRecord](batchedDegree)
-          var end2 = new Array[FASTQRecord](batchedDegree)
-          
-          while(iter.hasNext) {
-            val pairEnd = iter.next
-            end1(counter) = pairEnd.seq0
-            end2(counter) = pairEnd.seq1
-            counter += 1
-            if(counter == batchedDegree) {
-              ret = ret :+ pairEndBwaMemWorker1Batched(bwaMemOptGlobal.value, bwaIdxGlobal.value.bwt, bwaIdxGlobal.value.bns, bwaIdxGlobal.value.pac, 
-                                                 null, end1, end2, batchedDegree, isFPGAAccSWExtend, fpgaSWExtThreshold, jniSWExtendLibPath)
-              counter = 0
-            }
-          }
-
-          if(counter != 0) {
-            ret = ret :+ pairEndBwaMemWorker1Batched(bwaMemOptGlobal.value, bwaIdxGlobal.value.bwt, bwaIdxGlobal.value.bns, bwaIdxGlobal.value.pac, 
-                                               null, end1, end2, counter, isFPGAAccSWExtend, fpgaSWExtThreshold, jniSWExtendLibPath)
-          }
-
-          ret.toArray.iterator
-        }
-
-        reads = pairEndFASTQRDD.mapPartitions(it2ArrayIt_W1).flatMap(s => s)
-      }      
+      reads = pairEndFASTQRDD.map( pairSeq => pairEndBwaMemWorker1(
+          bwaMemOptGlobal.value, bwaIdxGlobal.value.bwt, bwaIdxGlobal.value.bns,
+          bwaIdxGlobal.value.pac, null, pairSeq) ) 
 
       pairEndFASTQRDD.unpersist(true)
       reads.cache
