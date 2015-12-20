@@ -1,3 +1,21 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+
 package cs.ucla.edu.bwaspark.worker2
 
 import scala.collection.immutable.Vector
@@ -7,6 +25,7 @@ import cs.ucla.edu.bwaspark.worker2.MemMarkPrimarySe._
 import cs.ucla.edu.bwaspark.worker2.MemRegToADAMSAM._
 import cs.ucla.edu.bwaspark.worker2.MemSamPe._
 import cs.ucla.edu.bwaspark.sam.SAMHeader
+import cs.ucla.edu.bwaspark.util.LocusEncode._
 import cs.ucla.edu.avro.fastq._
 
 import org.bdgenomics.formats.avro.AlignmentRecord
@@ -14,25 +33,6 @@ import org.bdgenomics.adam.models.{SequenceDictionary, RecordGroup}
 
 object BWAMemWorker2 {
   private val MEM_F_PE: Int = 0x2
-
-  
-  //pre-process: transform A/C/G/T to 0,1,2,3
-  private def locusEncode(locus: Char): Byte = {
-    //transforming from A/C/G/T to 0,1,2,3
-    locus match {
-      case 'A' => 0
-      case 'a' => 0
-      case 'C' => 1
-      case 'c' => 1
-      case 'G' => 2
-      case 'g' => 2
-      case 'T' => 3
-      case 't' => 3
-      case '-' => 5
-      case _ => 4
-    }
-  }
-
 
   /**
     *  BWA-MEM Worker 2: used for single-end alignment

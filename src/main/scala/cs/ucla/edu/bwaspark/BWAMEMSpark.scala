@@ -1,3 +1,21 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+
 package cs.ucla.edu.bwaspark
 
 import org.apache.spark.SparkContext
@@ -41,6 +59,8 @@ object BWAMEMSpark {
                                nextOption(map ++ Map('outputChoice -> value.toInt), tail)
         case "-oPath" :: value :: tail =>
                                nextOption(map ++ Map('outputPath -> value), tail)
+        case "-localRef" :: value :: tail =>
+                               nextOption(map ++ Map('localRef -> value), tail)
         case "-R" :: value :: tail =>
                                nextOption(map ++ Map('headerLine -> value), tail)
         case "-bSWExtSize" :: value :: tail =>
@@ -51,12 +71,11 @@ object BWAMEMSpark {
                                nextOption(map ++ Map('FPGASWExtThreshold -> value.toInt), tail)
         case "-jniSWExtendLibPath" :: value :: tail =>
                                nextOption(map ++ Map('jniSWExtendLibPath -> value.toString), tail)
-        case isPairEnd ::  inFASTAPath :: inFASTQPath :: fastqInputFolderNum :: Nil =>  
+        case isPairEnd ::  inFASTAPath :: inFASTQPath :: Nil =>  
                                nextOption(map ++ 
                                           Map('isPairEnd -> isPairEnd.toInt) ++ 
                                           Map('inFASTAPath -> inFASTAPath) ++
-                                          Map('inFASTQPath -> inFASTQPath) ++
-                                          Map('fastqInputFolderNum -> fastqInputFolderNum.toInt), list.tail.tail.tail.tail)
+                                          Map('inFASTQPath -> inFASTQPath), list.tail.tail.tail)
         case option :: tail => println("[Error] Unknown option " + option) 
                                exit(1) 
       }
@@ -101,12 +120,12 @@ object BWAMEMSpark {
       }
       bwamemArgs.outputChoice = outputChoice
     }
-    if(options.get('outputPath) != None) {
+    if(options.get('outputPath) != None)
       bwamemArgs.outputPath = options('outputPath).toString
-    }
-    if(options.get('headerLine) != None) {
+    if(options.get('localRef) != None)
+      bwamemArgs.localRef = options('localRef).toString.toInt
+    if(options.get('headerLine) != None)
       bwamemArgs.headerLine = options('headerLine).toString
-    }
     if(options.get('swExtBatchSize) != None) 
       bwamemArgs.swExtBatchSize = options('swExtBatchSize).toString.toInt
     if(options.get('isFPGAAccSWExtend) != None) {
@@ -136,10 +155,10 @@ object BWAMEMSpark {
       bwamemArgs.jniSWExtendLibPath = options('jniSWExtendLibPath).toString
     bwamemArgs.fastaInputPath = options('inFASTAPath).toString
     bwamemArgs.fastqHDFSInputPath = options('inFASTQPath).toString
-    bwamemArgs.fastqInputFolderNum = options('fastqInputFolderNum).toString.toInt  
 
-    println("CS- BWAMEM command line arguments: " + bwamemArgs.isPairEnd + " " + bwamemArgs.fastaInputPath + " " + bwamemArgs.fastqHDFSInputPath + " " + bwamemArgs.fastqInputFolderNum + " " + 
-            bwamemArgs.batchedFolderNum + " " + bwamemArgs.isPSWBatched + " " + bwamemArgs.subBatchSize + " " + bwamemArgs.isPSWJNI + " " + bwamemArgs.jniLibPath + " " + bwamemArgs.outputChoice + " " + bwamemArgs.outputPath)
+    println("CS- BWAMEM command line arguments: " + bwamemArgs.isPairEnd + " " + bwamemArgs.fastaInputPath + " " + bwamemArgs.fastqHDFSInputPath + " " + 
+            bwamemArgs.batchedFolderNum + " " + bwamemArgs.isPSWBatched + " " + bwamemArgs.subBatchSize + " " + bwamemArgs.isPSWJNI + " " + bwamemArgs.jniLibPath + " " + 
+            bwamemArgs.outputChoice + " " + bwamemArgs.outputPath)
 
     bwamemArgs
   }
@@ -197,7 +216,7 @@ object BWAMEMSpark {
  
   private def sortADAMCmdLineParser(argsList: List[String]): List[String] = {
     val parseList: List[String] = argsList match {
-      case inputPath :: outputPath :: Nil => List(inputPath, outputPath)
+      case fsServerAddr :: inputPath :: outputPath :: Nil => List(fsServerAddr, inputPath, outputPath)
       case _ => println("Unknown command lines arguments")
                 exit(1)
     }
@@ -205,46 +224,7 @@ object BWAMEMSpark {
     parseList
   }
 
-  val usage: String = "Usage 1: upload raw FASTQ file(s) to HDFS\n" +
-                      "Usage: upload-fastq [-bn INT] isPairEnd filePartitionNum inputFASTQFilePath1 [inputFASTQFilePath2] outFileHDFSPath\n\n" +
-                      "Required arguments (in the following order): \n" +
-                      "isPairEnd: pair-end (1) or single-end (0) data\n" +
-                      "inputFASTQFilePath1: the first input path of the FASTQ file in the local file system (for both single-end and pair-end)\n" +
-                      "inputFASTQFilePath2: (optional) the second input path of the FASTQ file in the local file system (for pair-end)\n" +
-                      "outFileHDFSPath: the root path of the output FASTQ files in HDFS\n\n" +
-                      "Optional arguments: \n" +
-                      "-bn (optional): the number of lines to be read in one group (batch)\n\n\n" +
-                      "Usage 2: use CS-BWAMEM aligner\n" +
-                      "Usage: cs-bwamem [-bfn INT] [-bPSW (0/1)] [-sbatch INT] [-bPSWJNI (0/1)] [-jniPath STRING] [-oType (0/1/2)] [-oPath STRING] [-R STRING] [-bSWExtSize INT] [-FPGAAcc (0/1)] isPairEnd fastaInputPath fastqHDFSInputPath fastqInputFolderNum\n\n" +
-                      "Required arguments (in the following order): \n" +
-                      "isPairEnd: perform pair-end (1) or single-end (0) mapping\n" +
-                      "fastaInputPath: the path of (local) BWA index files (bns, pac, and so on)\n" +
-                      "fastqHDFSInputPath: the path of the raw read files stored in HDFS\n" +
-                      "fastqInputFolderNum: the number of folders generated in the HDFS for the raw reads\n\n" +
-                      "Optional arguments: \n" +
-                      "-bfn (optional): the number of raw read folders in a batch to be processed\n" +
-                      "-bPSW (optional): whether the pair-end Smith Waterman is performed in a batched way\n" + 
-                      "-sbatch (optional): the number of reads to be processed in a subbatch\n" +
-                      "-bPSWJNI (optional): whether the native JNI library is called for better performance\n" +
-                      "-jniPath (optional): the JNI library path in the local machine\n" +
-                      "-oChoice (optional): the output format choice\n" +
-                      "                   0: no output (pure computation)\n" +
-                      "                   1: SAM file output in the local file system (default)\n" +
-                      "                   2: ADAM format output in the distributed file system\n" +
-                      "                   3: SAM format output in the distributed file system\n" +
-                      "-oPath (optional): the output path; users need to provide correct path in the local or distributed file system\n\n" +
-                      "-R (should be added for common case): Complete read group header line. Example: @RG\tID:foo\tSM:bar\n\n" +
-                      "-bSWExtSize (optional): the batch size used for SWExtend\n\n" +
-                      "-FPGAAccSWExt (optional): whether the FPGA accelerator is used for accelerating SWExtend\n" +
-                      "                   0: No (default)\n" +
-                      "                   1: Yes\n\n" +
-                      "-FPGASWExtThreshold (optional): the threshold of using FPGA accelerator for SWExtend.\n" + 
-                      "    If the nubmer of seed in one step is larger than this threshold, FPGA acceleration will be applied. Otherwise, CPU is used for computation.\n\n\n" +
-                      "Usage 3: merge the output ADAM folder pieces and save as a new ADAM file in HDFS\n" +
-                      "Usage: merge adamHDFSRootInputPath adamHDFSOutputPath\n\n\n" +
-                      "Usage 4: sort the output ADAM folder pieces and save as a new ADAM file in HDFS\n" +
-                      "Usage: sort adamHDFSRootInputPath adamHDFSOutputPath\n"
-
+  val usage = Usage.usage
 
   private def commandLineParser(arg: String): String = {
     def getCommand(cmd: String): String = {
@@ -296,6 +276,7 @@ object BWAMEMSpark {
       else
         fastqLoader.storePairEndFASTQInHDFS(sc, uploadFASTQArgs.inputFASTQFilePath1, uploadFASTQArgs.inputFASTQFilePath2, uploadFASTQArgs.outFileHDFSPath, uploadFASTQArgs.filePartitionNum)
 
+      println("I/O (Write to HDFS) waiting time: " + fastqLoader.ioWaitingTime)
       println("Upload FASTQ to HDFS Finished!!!")
     }
     else if(command == "cs-bwamem") {
@@ -310,18 +291,18 @@ object BWAMEMSpark {
       exit(1)
     }
     else if(command == "merge") {
-      val conf = new SparkConf().setAppName("Cloud-Scale BWAMEM: merge").set("spark.scheduler.maxRegisteredResourcesWaitingTime", "600000").set("spark.executor.heartbeatInterval", "100000").set("spark.storage.memoryFraction", "0.7").set("spark.worker.timeout", "300000").set("spark.akka.timeout", "300000").set("spark.storage.blockManagerHeartBeatMs", "300000").set("spark.akka.retry.wait", "300000").set("spark.akka.frameSize", "1000").set("spark.executor.extraLibraryPath", "/home/ytchen/incubator/cloud-scale-bwamem-0.1.0/target/jniNative.so").set("spark.serializer", "org.apache.spark.serializer.KryoSerializer").set("spark.shuffle.consolidateFiles", "true")
+      val conf = new SparkConf().setAppName("Cloud-Scale BWAMEM: merge").set("spark.serializer", "org.apache.spark.serializer.KryoSerializer").set("spark.shuffle.consolidateFiles", "true")
       val sc = new SparkContext(conf)
 
-      val adamRecords = MergeADAMFiles(sc, sortArgs(0), coalesceFactor)
-      adamRecords.adamSave(sortArgs(1))
+      val adamRecords = MergeADAMFiles(sc, sortArgs(0), sortArgs(1), coalesceFactor)
+      adamRecords.adamParquetSave(sortArgs(2))
     }
     else if(command == "sort") {
-      val conf = new SparkConf().setAppName("Cloud-Scale BWAMEM: sort").set("spark.scheduler.maxRegisteredResourcesWaitingTime", "600000").set("spark.executor.heartbeatInterval", "100000").set("spark.storage.memoryFraction", "0.7").set("spark.worker.timeout", "300000").set("spark.akka.timeout", "300000").set("spark.storage.blockManagerHeartBeatMs", "300000").set("spark.akka.retry.wait", "300000").set("spark.akka.frameSize", "1000").set("spark.executor.extraLibraryPath", "/home/ytchen/incubator/cloud-scale-bwamem-0.1.0/target/jniNative.so").set("spark.serializer", "org.apache.spark.serializer.KryoSerializer").set("spark.shuffle.consolidateFiles", "true")
+      val conf = new SparkConf().setAppName("Cloud-Scale BWAMEM: sort").set("spark.serializer", "org.apache.spark.serializer.KryoSerializer").set("spark.shuffle.consolidateFiles", "true")
       val sc = new SparkContext(conf)
 
-      val adamRecords = Sort(sc, sortArgs(0), coalesceFactor)
-      adamRecords.adamSave(sortArgs(1))
+      val adamRecords = Sort(sc, sortArgs(0), sortArgs(1), coalesceFactor)
+      adamRecords.adamParquetSave(sortArgs(2))
     }
 
   } 

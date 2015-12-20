@@ -1,3 +1,21 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+
 package cs.ucla.edu.bwaspark.worker2
 
 import org.apache.commons.math3.special.Erf.erfc
@@ -15,6 +33,7 @@ import cs.ucla.edu.bwaspark.worker2.MemMarkPrimarySe.{hash64, memMarkPrimarySe}
 import cs.ucla.edu.bwaspark.worker2.MemRegToADAMSAM._
 import cs.ucla.edu.bwaspark.jni.{MateSWJNI, MateSWType, SeqSWType, RefSWType}
 import cs.ucla.edu.bwaspark.sam.SAMHeader
+import cs.ucla.edu.bwaspark.util.LocusEncode._
 import cs.ucla.edu.avro.fastq._
 
 import org.bdgenomics.formats.avro.AlignmentRecord
@@ -47,22 +66,6 @@ object MemSamPe {
   private val SAM_OUT_FILE = 1
   private val ADAM_OUT = 2
 
-  //pre-process: transform A/C/G/T to 0,1,2,3
-  private def locusEncode(locus: Char): Byte = {
-    //transforming from A/C/G/T to 0,1,2,3
-    locus match {
-      case 'A' => 0
-      case 'a' => 0
-      case 'C' => 1
-      case 'c' => 1
-      case 'G' => 2
-      case 'g' => 2
-      case 'T' => 3
-      case 't' => 3
-      case '-' => 5
-      case _ => 4
-    }
-  }
 
   /**
     *  Calculate the sub-score
@@ -1987,11 +1990,11 @@ object MemSamPe {
     }
 
     val mateSWArray = mateSWVec.toArray
-    println("mateSWArray size: " + mateSWArray.size)
+    //println("mateSWArray size: " + mateSWArray.size)
     val seqsSWArray = seqsSWVec.toArray
-    println("seqsSWArray size: " + seqsSWArray.size)
+    //println("seqsSWArray size: " + seqsSWArray.size)
     val refSWArray = refSWVec.toArray
-    println("refSWArray size: " + refSWArray.size)
+    //println("refSWArray size: " + refSWArray.size)
 
     (mateSWArray, seqsSWArray, refSWArray, refSWArraySize)
   }
