@@ -37,6 +37,7 @@ class BWAMEMCommand {
                                                        // 0: w/o local reference genome (default)
                                                        // 1: with local reference genome 
     var headerLine: String = "@RG\tID:foo\tSM:bar";    // (should be added for common use case) Complete read group header line: Example: @RG\tID:foo\tSM:bar
+    var isSWExtBatched: Boolean = false                // (optional) whether the SWExtend is executed in a batched way
     var swExtBatchSize: Int = 1024                     // (optional) the batch size used for used for SWExtend
     var isFPGAAccSWExtend: Boolean = false             // (optional) whether the FPGA accelerator is used for accelerating SWExtend
     var fpgaSWExtThreshold: Int = 128                  // (optional) the threshold of using FPGA accelerator for SWExtend
