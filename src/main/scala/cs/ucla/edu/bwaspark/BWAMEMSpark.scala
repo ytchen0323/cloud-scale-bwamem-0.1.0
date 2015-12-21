@@ -32,6 +32,7 @@ import cs.ucla.edu.bwaspark.debug.DebugFlag._
 import cs.ucla.edu.bwaspark.fastq._
 import cs.ucla.edu.avro.fastq._
 import cs.ucla.edu.bwaspark.FastMap.memMain
+import cs.ucla.edu.bwaspark.FastMapProfile.memMainProfile
 import cs.ucla.edu.bwaspark.commandline._
 import cs.ucla.edu.bwaspark.dnaseq._
 
@@ -63,6 +64,8 @@ object BWAMEMSpark {
                                nextOption(map ++ Map('localRef -> value), tail)
         case "-R" :: value :: tail =>
                                nextOption(map ++ Map('headerLine -> value), tail)
+        case "-isSWExtBatched" :: value :: tail =>
+                               nextOption(map ++ Map('isSWExtBatched -> value.toInt), tail)
         case "-bSWExtSize" :: value :: tail =>
                                nextOption(map ++ Map('swExtBatchSize -> value.toInt), tail)
         case "-FPGAAccSWExt" :: value :: tail =>
@@ -126,6 +129,17 @@ object BWAMEMSpark {
       bwamemArgs.localRef = options('localRef).toString.toInt
     if(options.get('headerLine) != None)
       bwamemArgs.headerLine = options('headerLine).toString
+    if(options.get('isSWExtBatched) != None) {
+      val isSWExtBatched = options('isSWExtBatched).toString.toInt
+      if(isSWExtBatched == 0)
+        bwamemArgs.isSWExtBatched = false
+      else if(isSWExtBatched == 1)
+        bwamemArgs.isSWExtBatched = true
+      else {
+        println("[Error] Undefined -isSWExtBatched argument" + isSWExtBatched)
+        exit(1)
+      }
+    }
     if(options.get('swExtBatchSize) != None) 
       bwamemArgs.swExtBatchSize = options('swExtBatchSize).toString.toInt
     if(options.get('isFPGAAccSWExtend) != None) {
@@ -233,6 +247,7 @@ object BWAMEMSpark {
         case "cs-bwamem" => cmd
         case "merge" => cmd
         case "sort" => cmd
+        case "cs-bwamem-profile" => cmd
         case "help" => println(usage)
                          exit(1)
         case _ => println("Unknown command " + cmd)
@@ -258,6 +273,7 @@ object BWAMEMSpark {
     if(command == "upload-fastq") uploadFASTQArgs = uploadFASTQCmdLineParser(argsList.tail)
     else if(command == "cs-bwamem") bwamemArgs = bwamemCmdLineParser(argsList.tail)
     else if(command == "sort" || command == "merge") sortArgs = sortADAMCmdLineParser(argsList.tail)
+    else if(command == "cs-bwamem-profile") bwamemArgs = bwamemCmdLineParser(argsList.tail)
     else { 
       println("Unknown command " + command)
       exit(1)
@@ -285,6 +301,17 @@ object BWAMEMSpark {
       
       memMain(sc, bwamemArgs) 
       println("CS-BWAMEM Finished!!!")
+
+      // NOTE: Some of the Spark tasks are in "GET RESULT" status and cause the pending state... 
+      //       However, the data are returned. Therefore, we enforce program to exit.
+      exit(1)
+    }
+    else if(command == "cs-bwamem-profile") {
+      val conf = new SparkConf().setAppName("Cloud-Scale BWAMEM: cs-bwamem-profile")
+      val sc = new SparkContext(conf)
+      
+      memMainProfile(sc, bwamemArgs) 
+      println("CS-BWAMEM Profiling Finished!!!")
 
       // NOTE: Some of the Spark tasks are in "GET RESULT" status and cause the pending state... 
       //       However, the data are returned. Therefore, we enforce program to exit.
