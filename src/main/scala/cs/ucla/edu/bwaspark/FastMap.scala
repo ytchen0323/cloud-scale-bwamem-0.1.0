@@ -26,6 +26,7 @@ import org.apache.spark.broadcast.Broadcast
 
 import cs.ucla.edu.bwaspark.datatype._
 import cs.ucla.edu.bwaspark.worker1.BWAMemWorker1._
+import cs.ucla.edu.bwaspark.worker1.BWAMemWorker1Batched._
 import cs.ucla.edu.bwaspark.worker2.BWAMemWorker2._
 import cs.ucla.edu.bwaspark.worker2.MemSamPe._
 import cs.ucla.edu.bwaspark.sam.SAMHeader
