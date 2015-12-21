@@ -247,7 +247,7 @@
             <artifactId>spark-core_${scala.artifact.suffix}</artifactId>
             <version>${spark.version}</version>
             <scope>system</scope>
-            <systemPath>/home/jmg3/spark-1.2.0/assembly/target/scala-2.10/spark-assembly-1.2.0-hadoop2.4.1.jar</systemPath>
+            <systemPath>/home/jmg3/spark-1.2.0/lib/spark-assembly-1.2.0-hadoop2.4.0.jar</systemPath>
             <exclusions>
               <exclusion>
                 <groupId>org.apache.hadoop</groupId>
