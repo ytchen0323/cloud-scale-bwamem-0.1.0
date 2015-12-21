@@ -176,9 +176,9 @@ object FastMap {
     val subBatchSize = bwamemArgs.subBatchSize                 // the number of reads to be processed in a subbatch
     val isPSWJNI = bwamemArgs.isPSWJNI                         // whether the native JNI library is called for better performance
     val jniLibPath = bwamemArgs.jniLibPath                     // the JNI library path in the local machine
-    val isSWExtBatched = bwamemArgs.isSWExtBatched             // whether the SWExtend is executed in a batched way
     val outputChoice = bwamemArgs.outputChoice                 // the output format choice
     val outputPath = bwamemArgs.outputPath                     // the output path in the local or distributed file system
+    val isSWExtBatched = bwamemArgs.isSWExtBatched             // whether the SWExtend is executed in a batched way
     val swExtBatchSize = bwamemArgs.swExtBatchSize             // the batch size used for used for SWExtend
     val isFPGAAccSWExtend = bwamemArgs.isFPGAAccSWExtend       // whether the FPGA accelerator is used for accelerating SWExtend
     val fpgaSWExtThreshold = bwamemArgs.fpgaSWExtThreshold     // the threshold of using FPGA accelerator for SWExtend
