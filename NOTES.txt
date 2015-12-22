@@ -1,0 +1,58 @@
+12/21/2015
+
+- cs-bwamem-profile command seems to be broken (possibly on systems without
+  FPGAs?)
+- Main computational kernel starts at line 262 of FastMap.scala:
+
+      if(!isSWExtBatched) {
+        reads = pairEndFASTQRDD.map( pairSeq =>
+                pairEndBwaMemWorker1(bwaMemOptGlobal.value,
+                    bwaIdxGlobal.value.value.bwt, bwaIdxGlobal.value.value.bns,
+                    bwaIdxGlobal.value.value.pac, null, pairSeq) )
+      }
+      // SWExtend() is processed in a batched way. FPGA accelerating may be applied
+      else {
+          ...
+
+- Performs a large map, followed by a reduce step at line 304:
+
+      // MemPeStat (Reduce step)
+      val peStatPrepRDD = reads.map( pairSeq =>
+              memPeStatPrep(bwaMemOptGlobal.value,
+                  bwaIdxGlobal.value.value.bns.l_pac, pairSeq) )
+      val peStatPrepArray = peStatPrepRDD.collect
+
+- Then, a stage 2 map starting at line 356:
+
+      if(isPSWBatched) {
+          ...
+      }
+      // NOTE: need to be modified!!!
+      // Normal read-based processing
+      else {
+        val count = reads.map(pairSeq =>
+                pairEndBwaMemWorker2(bwaMemOptGlobal.value,
+                    bwaIdxGlobal.value.value.bns, bwaIdxGlobal.value.value.pac,
+                    0, pes, pairSeq, samHeader) ).count
+        numProcessed += count.toLong
+      }
+
+- So the main computational kernels to investigate are pairEndBwaMemWorker1,
+  memPeStatPrep, and pairEndBwaMemWorker2
+- pairEndBwaMemWorker1 is in BWAMemWorker1.scala, memPeStatPrep is in
+  MemSamPe.scala, pairEndBwaMemWorker2 is in BWAMemWorker2.scala
+
+- pairEndBwaMemWorker1:
+  - Calls bwaMemWorker1 twice, once for pairSeqs.seq0 and another time for
+    pairSeqs.seq1:
+    - Converts read to a Array[Byte]
+    - generateChains (MemChain.scala)
+      - generateChainTree
+      - traverseChainTree
+    - memChainFilter (MemChainFilter.scala)
+    - memChainToAln (MemChainToAlign.scala)
+      - leftExtension
+        - SWExtend (SWUtil.scala)
+      - rightExtension
+        - SWExtend
+    - Returns a ReadType

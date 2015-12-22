@@ -18,6 +18,7 @@
 
 package cs.ucla.edu.bwaspark.worker1
 
+import scala.collection.mutable.ListBuffer
 import scala.collection.mutable.MutableList
 
 import cs.ucla.edu.bwaspark.datatype._
@@ -126,71 +127,41 @@ object MemChainToAlign {
     *  @param regArray the input alignment registers, which are the registers from the output of the previous call on MemChainToAln().
     *              This parameter is updated iteratively. The number of iterations is the number of chains of this read.
     */
-  def memChainToAln(opt: MemOptType, pacLen: Long, pac: Array[Byte], queryLen: Int, query: Array[Byte], 
-    chain: MemChainType, regArray: MemAlnRegArrayType) {
+  def memChainToAln(opt: MemOptType, pacLen: Long, pac: Array[Byte],
+          queryLen: Int, query: Array[Byte], chain: MemChainType,
+          regArray: MemAlnRegArrayType, rmax_0 : Long, rmax_1 : Long, srt : Array[SRTType]) :
+          Tuple2[ListBuffer[Tuple2[Int, Int]], ListBuffer[Tuple2[Int, Int]]] = {
 
-    var rmax: Array[Long] = new Array[Long](2)   
-    var srt: Array[SRTType] = new Array[SRTType](chain.seeds.length) 
-    var aw: Array[Int] = new Array[Int](2)
-
- 
-    // calculate the maximum possible span of this alignment
-    rmax = getMaxSpan(opt, pacLen, queryLen, chain)
-    //println("rmax(0): " + rmax(0) + ", rmax(1): " + rmax(1))  // debugging message
-
-    // retrieve the reference sequence
-    val ret = bnsGetSeq(pacLen, pac, rmax(0), rmax(1))
-    var rseq = ret._1
-    val rlen = ret._2
-    assert(rlen == rmax(1) - rmax(0))
-
-    // debugging message
-    //println(rlen)     
-    //for(i <- 0 until rlen.toInt)
-      //print(rseq(i).toInt)
-    //println
-
-    // Setup the value of srt array
-    var i = 0
-    while(i < chain.seeds.length) {
-      srt(i) = new SRTType(chain.seedsRefArray(i).len, i)
-      i += 1
-    }
-
-    srt = srt.sortBy(s => (s.len, s.index))
-    //srt.map(s => println("(" + s.len + ", " + s.index + ")") )  // debugging message
+    var toLeftExtend = new ListBuffer[Tuple2[Int, Int]]()
+    var toRightExtend = new ListBuffer[Tuple2[Int, Int]]()
 
     // The main for loop    
     var k = chain.seeds.length - 1
-    while(k >= 0) {
+    while (k >= 0) {
       val seed = chain.seedsRefArray( srt(k).index )
+      // textExtension does not modify seed
       var i = testExtension(opt, seed, regArray)
-     
-      var checkoverlappingRet = -1
-
-      if(i < regArray.curLength) checkoverlappingRet = checkOverlapping(k + 1, seed, chain, srt)
+    
+      // checkOverlapping does not modify seed
+      val checkoverlappingRet = if(i < regArray.curLength)
+            checkOverlapping(k + 1, seed, chain, srt) else -1
       
       // no overlapping seeds; then skip extension
-      if((i < regArray.curLength) && (checkoverlappingRet == chain.seeds.length)) {
+      if(i < regArray.curLength && checkoverlappingRet == chain.seeds.length) {
         srt(k).index = MARKED  // mark that seed extension has not been performed
-      }
-      else {
+      } else {
         // push the current align reg into the output list
         // initialize a new alnreg
         var reg = new MemAlnRegType
         reg.width = opt.w
-        aw(0) = opt.w
-        aw(1) = opt.w
         reg.score = -1
         reg.trueScore = -1
      
         // left extension
-        if(seed.qBeg > 0) {
-          val ret = leftExtension(opt, seed, rmax, query, rseq, reg) 
-          reg = ret._1
-          aw(0) = ret._2
-        }
-        else {
+        if (seed.qBeg > 0) {
+          // opt, seed, rmax, query, rseq are constant
+          toLeftExtend += new Tuple2[Int, Int](k, regArray.curLength)
+        } else {
           reg.score = seed.len * opt.a
           reg.trueScore = seed.len * opt.a
           reg.qBeg = 0
@@ -199,20 +170,12 @@ object MemChainToAlign {
             
         // right extension
         if((seed.qBeg + seed.len) != queryLen) {
-          val ret = rightExtension(opt, seed, rmax, query, queryLen, rseq, reg)
-          reg = ret._1
-          aw(1) = ret._2
-        }
-        else {
+          toRightExtend += new Tuple2[Int, Int](k, regArray.curLength)
+        } else {
           reg.qEnd = queryLen
           reg.rEnd = seed.rBeg + seed.len
         }
   
-        reg.seedCov = computeSeedCoverage(chain, reg)
-
-        if(aw(0) > aw(1)) reg.width = aw(0)
-        else reg.width = aw(1)
-
         // push the current align reg into the output array
         regArray.regs(regArray.curLength) = reg
         regArray.curLength += 1
@@ -221,6 +184,7 @@ object MemChainToAlign {
       k -= 1
     }
 
+    (toLeftExtend, toRightExtend)
   }
 
   /**
@@ -258,7 +222,8 @@ object MemChainToAlign {
     *  @param queryLen the length of the query (read)
     *  @param chain the input chain
     */
-  private def getMaxSpan(opt: MemOptType, pacLen: Long, queryLen: Int, chain: MemChainType): Array[Long] = {
+  def getMaxSpan(opt: MemOptType, pacLen: Long, queryLen: Int,
+          chain: MemChainType): Array[Long] = {
     var rmax: Array[Long] = new Array[Long](2)
     val doublePacLen = pacLen << 1
     rmax(0) = doublePacLen
@@ -293,7 +258,7 @@ object MemChainToAlign {
     *  @param seed the input seed
     *  @param regArray the current align registers
     */
-  private def testExtension(opt: MemOptType, seed: MemSeedType, regArray: MemAlnRegArrayType): Int = {
+  def testExtension(opt: MemOptType, seed: MemSeedType, regArray: MemAlnRegArrayType): Int = {
     var rDist: Long = -1 
     var qDist: Int = -1
     var maxGap: Int = -1
@@ -363,7 +328,7 @@ object MemChainToAlign {
     *  @param chain the input chain
     *  @param srt the srt array, which record the length and the original index on the chain
     */ 
-  private def checkOverlapping(startIdx: Int, seed: MemSeedType, chain: MemChainType, srt: Array[SRTType]): Int = {
+  def checkOverlapping(startIdx: Int, seed: MemSeedType, chain: MemChainType, srt: Array[SRTType]): Int = {
     var breakIdx = chain.seeds.length
     var i = startIdx
     var isBreak = false
@@ -405,9 +370,11 @@ object MemChainToAlign {
     *  @param rseq the reference sequence
     *  @param reg the current align register before doing left extension (the value is not complete yet)
     */
-  private def leftExtension(opt: MemOptType, seed: MemSeedType, rmax: Array[Long], query: Array[Byte], rseq: Array[Byte], reg: MemAlnRegType): (MemAlnRegType, Int) = {
+  def leftExtension(opt: MemOptType, seed: MemSeedType,
+          rmax_0: Long, query: Array[Byte], rseq: Array[Byte],
+          reg: MemAlnRegType): Int = {
     var aw = 0
-    val tmp = (seed.rBeg - rmax(0)).toInt
+    val tmp = (seed.rBeg - rmax_0).toInt
     var qs = new Array[Byte](seed.qBeg)
     var rs = new Array[Byte](tmp)
     var qle = -1
@@ -416,7 +383,7 @@ object MemChainToAlign {
     var gscore = -1
     var maxoff = -1
 
-    var regResult = reg
+    var score = reg.score
     
     var i = 0
     while(i < seed.qBeg) {
@@ -433,36 +400,38 @@ object MemChainToAlign {
     i = 0
     var isBreak = false
     while(i < MAX_BAND_TRY && !isBreak) {
-      var prev = regResult.score
+      val prev = score
       aw = opt.w << i
-      val results = SWExtend(seed.qBeg, qs, tmp, rs, 5, opt.mat, opt.oDel, opt.eDel, opt.oIns, opt.eIns, aw, opt.penClip5, opt.zdrop, seed.len * opt.a)
-      regResult.score = results(0)
+      val results = SWExtend(seed.qBeg, qs, tmp, rs, 5, opt.mat, opt.oDel,
+              opt.eDel, opt.oIns, opt.eIns, aw, opt.penClip5, opt.zdrop, seed.len * opt.a)
+      score = results(0)
       qle = results(1)
       tle = results(2)
       gtle = results(3)
       gscore = results(4)
       maxoff = results(5)
 
-      if(regResult.score == prev || ( maxoff < (aw >> 1) + (aw >> 2) ) ) isBreak = true
+      if(score == prev || ( maxoff < (aw >> 1) + (aw >> 2) ) ) isBreak = true
 
       i += 1
     }
 
     // check whether we prefer to reach the end of the query
     // local extension
-    if(gscore <= 0 || gscore <= (regResult.score - opt.penClip5)) {
-      regResult.qBeg = seed.qBeg - qle
-      regResult.rBeg = seed.rBeg - tle
-      regResult.trueScore = regResult.score
+    reg.score = score
+    if(gscore <= 0 || gscore <= (score - opt.penClip5)) {
+      reg.qBeg = seed.qBeg - qle
+      reg.rBeg = seed.rBeg - tle
+      reg.trueScore = score
     }
     // to-end extension
     else {
-      regResult.qBeg = 0
-      regResult.rBeg = seed.rBeg - gtle
-      regResult.trueScore = gscore
+      reg.qBeg = 0
+      reg.rBeg = seed.rBeg - gtle
+      reg.trueScore = gscore
     }
 
-    (regResult, aw)
+    aw
   }
 
   /**
@@ -477,12 +446,13 @@ object MemChainToAlign {
     *  @param rseq the reference sequence
     *  @param reg the current align register before doing left extension (the value is not complete yet)
     */
-  private def rightExtension(opt: MemOptType, seed: MemSeedType, rmax: Array[Long], query: Array[Byte], queryLen: Int, rseq: Array[Byte], reg: MemAlnRegType): (MemAlnRegType, Int) = {
+  def rightExtension(opt: MemOptType, seed: MemSeedType,
+      rmax_0: Long, rmax_1 : Long, query: Array[Byte], queryLen: Int, rseq: Array[Byte],
+      reg: MemAlnRegType): Int = {
     var aw = 0
-    var regResult = reg
     var qe = seed.qBeg + seed.len
-    var re = seed.rBeg + seed.len - rmax(0)
-    var sc0 = regResult.score
+    var re = seed.rBeg + seed.len - rmax_0
+    var sc0 = reg.score
     var qle = -1
     var tle = -1
     var gtle = -1
@@ -499,10 +469,10 @@ object MemChainToAlign {
       i += 1
     }
 
-    var reArray = new Array[Byte]((rmax(1) - rmax(0) - re).toInt)
+    var reArray = new Array[Byte]((rmax_1 - rmax_0 - re).toInt)
     // fill reArray
     i = 0
-    while(i < (rmax(1) - rmax(0) - re).toInt) {
+    while(i < (rmax_1 - rmax_0 - re).toInt) {
       reArray(i) = rseq(re.toInt + i)
       i += 1
     }
@@ -510,35 +480,37 @@ object MemChainToAlign {
     i = 0
     var isBreak = false
     while(i < MAX_BAND_TRY && !isBreak) {
-      var prev = regResult.score
+      var prev = reg.score
       aw = opt.w << i
-      val results = SWExtend(queryLen - qe, qeArray, (rmax(1) - rmax(0) - re).toInt, reArray, 5, opt.mat, opt.oDel, opt.eDel, opt.oIns, opt.eIns, aw, opt.penClip3, opt.zdrop, sc0)
-      regResult.score = results(0)
+      val results = SWExtend(queryLen - qe, qeArray,
+              (rmax_1 - rmax_0 - re).toInt, reArray, 5, opt.mat, opt.oDel,
+              opt.eDel, opt.oIns, opt.eIns, aw, opt.penClip3, opt.zdrop, sc0)
+      reg.score = results(0)
       qle = results(1)
       tle = results(2)
       gtle = results(3)
       gscore = results(4)
       maxoff = results(5)
 
-      if(regResult.score == prev || ( maxoff < (aw >> 1) + (aw >> 2) ) ) isBreak = true
+      if(reg.score == prev || ( maxoff < (aw >> 1) + (aw >> 2) ) ) isBreak = true
 
       i += 1
     }
 
     // check whether we prefer to reach the end of the query
     // local extension
-    if(gscore <= 0 || gscore <= (regResult.score - opt.penClip3)) {
-      regResult.qEnd = qe + qle
-      regResult.rEnd = rmax(0) + re + tle
-      regResult.trueScore += regResult.score - sc0
+    if(gscore <= 0 || gscore <= (reg.score - opt.penClip3)) {
+      reg.qEnd = qe + qle
+      reg.rEnd = rmax_0 + re + tle
+      reg.trueScore += reg.score - sc0
     }
     else {
-      regResult.qEnd = queryLen
-      regResult.rEnd = rmax(0) + re + gtle
-      regResult.trueScore += gscore - sc0
+      reg.qEnd = queryLen
+      reg.rEnd = rmax_0 + re + gtle
+      reg.trueScore += gscore - sc0
     }
 
-    (regResult, aw)
+    aw
   }
     
   /** 
@@ -548,7 +520,7 @@ object MemChainToAlign {
     *  @param chain the input chain
     *  @param reg the current align register after left/right extension is done 
     */
-  private def computeSeedCoverage(chain: MemChainType, reg: MemAlnRegType): Int = {
+  def computeSeedCoverage(chain: MemChainType, reg: MemAlnRegType): Int = {
     var seedcov = 0
     var i = 0
     

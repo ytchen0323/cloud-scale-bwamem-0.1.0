@@ -23,6 +23,8 @@ N_NODES=$(cat ${HADOOP_HOME}/etc/hadoop/slaves | wc -l)
 CORES_PER_NODE=$(cat /proc/cpuinfo | grep processor | wc -l)
 TOTAL_CORES=$(echo $N_NODES \* $CORES_PER_NODE | bc)
 
+INPUT_SIZE=1M
+
 if [[ $TASK == upload ]]; then
     # store RDD
     # pair-end
@@ -32,32 +34,38 @@ if [[ $TASK == upload ]]; then
         --master spark://$(hostname):7077 \
         --driver-java-options "-XX:+PrintFlagsFinal" \
         --conf spark.akka.frameSize=30 \
-        ${BWAMEM_HOME}/target/cloud-scale-bwamem-0.1.0-assembly.jar upload-fastq \
-        -bn 1000000 1 $TOTAL_CORES /scratch/jmg3/HCC1954_1_10M.fq \
-        /scratch/jmg3/HCC1954_2_10M.fq hdfs://$(hostname):54310/HCC1954_10Mreads.fq
+        ${BWAMEM_HOME}/target/cloud-scale-bwamem-0.2.2-assembly.jar upload-fastq \
+        -bn 1000000 1 $TOTAL_CORES /scratch/jmg3/HCC1954_1_${INPUT_SIZE}.fq \
+        /scratch/jmg3/HCC1954_2_${INPUT_SIZE}.fq hdfs://$(hostname):54310/HCC1954_${INPUT_SIZE}reads.fq
     echo "Done with upload"
 fi
 
 if [[ $TASK == kernel ]]; then
     # run cloud-scale bwamem
     # SAM output
-    # When running with 10M reads, the last parameter (which indicates the
-    # number of input files to read) must be set to 20. When doing 100M reads, I
-    # believe it is supposed to be set to 80?
+
+    OUTPUT_DIR=/scratch/jmg3/HCC1954_${INPUT_SIZE}reads.adam
+    rm -rf $OUTPUT_DIR
+
     echo "Starting kernel"
+    BWAMEM_JAR=${BWAMEM_HOME}/target/cloud-scale-bwamem-0.2.2-assembly.jar
     SPARK_DRIVER_MEMORY=40g $SPARK_HOME/bin/spark-submit --executor-memory 40g \
         --class cs.ucla.edu.bwaspark.BWAMEMSpark --total-executor-cores $TOTAL_CORES \
         --master spark://$(hostname):7077 \
         --driver-java-options "-XX:+PrintFlagsFinal" \
+        --conf spark.driver.cores=12 \
         --conf spark.driver.maxResultSize=40g \
-        ${BWAMEM_HOME}/target/cloud-scale-bwamem-0.1.0-assembly.jar cs-bwamem \
-        -bfn 20 -bPSW 1 -sbatch 5 -bPSWJNI 1 \
-        -jniPath ${BWAMEM_HOME}/target/jniNative.so -oChoice 1 \
-        -oPath /scratch/jmg3/HCC1954_10Mreads.sam \
-        1 \
-        /scratch/jmg3/ReferenceMetadata/human_g1k_v37.fasta \
-        hdfs://$(hostname):54310/HCC1954_10Mreads.fq \
-        20
+        --conf spark.storage.memoryFraction=0.7 \
+        --conf spark.eventLog.enabled=false \
+        --conf spark.akka.threads=12 --conf spark.akka.frameSize=1024 \
+        ${BWAMEM_JAR} cs-bwamem -bfn 1 -bPSW 1 -sbatch 10 -bPSWJNI 1 -jniPath \
+        ${BWAMEM_HOME}/target/jniNative.so -oChoice 2 \
+        -oPath $OUTPUT_DIR -localRef 1 \
+        -R "@RG	ID:HCC1954	LB:HCC1954	SM:HCC1954" -isSWExtBatched 1 \
+        -bSWExtSize 32768 -FPGAAccSWExt 0 -FPGASWExtThreshold 64 \
+        -jniSWExtendLibPath "${BWAMEM_HOME}/src/main/jni_fpga/target/jniSWExtend.so" \
+        1 /scratch/jmg3/ReferenceMetadata/human_g1k_v37.fasta hdfs://$(hostname):54310/HCC1954_${INPUT_SIZE}reads.fq
+        # ^ isPairEnd ::  inFASTAPath :: inFASTQPath
     echo "Done with kernel"
 fi
 

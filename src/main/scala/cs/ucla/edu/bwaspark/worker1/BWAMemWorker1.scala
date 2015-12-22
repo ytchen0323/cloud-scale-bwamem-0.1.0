@@ -19,6 +19,9 @@
 package cs.ucla.edu.bwaspark.worker1
 
 import cs.ucla.edu.bwaspark.datatype._
+import cs.ucla.edu.bwaspark.util.BNTSeqUtil._
+import cs.ucla.edu.bwaspark.util.SWUtil._
+import cs.ucla.edu.bwaspark.datatype._
 import scala.collection.mutable.MutableList
 import java.util.TreeSet
 import java.util.Comparator
@@ -82,7 +85,28 @@ object BWAMemWorker1 {
       regArray.regs = new Array[MemAlnRegType](totalSeedNum)
 
       for (i <- 0 until chainsFiltered.length) {
-        memChainToAln(opt, bns.l_pac, pac, seq.getSeqLength, read, chainsFiltered(i), regArray)
+        val chain = chainsFiltered(i)
+
+        // calculate the maximum possible span of this alignment
+        val rmax : Array[Long] = getMaxSpan(opt, bns.l_pac, read.length, chain)
+        val rmax_0 = rmax(0)
+        val rmax_1 = rmax(1)
+
+        // retrieve the reference sequence
+        val ret = bnsGetSeq(bns.l_pac, pac, rmax_0, rmax_1)
+        val rseq = ret._1
+        val rlen = ret._2
+        assert(rlen == rmax_1 - rmax_0)
+
+        var srt: Array[SRTType] = new Array[SRTType](chain.seeds.length) 
+        // Setup the value of srt array
+        for (i <- 0 until chain.seeds.length) {
+          srt(i) = new SRTType(chain.seedsRefArray(i).len, i)
+        }
+        srt = srt.sortBy(s => (s.len, s.index))
+
+        memChainToAln(opt, bns.l_pac, pac, seq.getSeqLength, read,
+                chain, regArray, rmax_0, rmax_1, srt)
       }
 
       regArray.regs = regArray.regs.filter(r => (r != null))

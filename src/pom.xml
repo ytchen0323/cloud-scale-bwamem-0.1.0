@@ -16,7 +16,7 @@
       <version>0.2.1</version>
       <type>jar</type>
       <scope>system</scope>
-      <systemPath>/home/jmg3/cloud-scale-bwamem-0.1.0/target/cloud-scale-bwamem-0.1.0-assembly.jar</systemPath>
+      <systemPath>/home/jmg3/cloud-scale-bwamem-0.1.0/target/cloud-scale-bwamem-0.2.2-assembly.jar</systemPath>
     </dependency>   
   </dependencies>
   
