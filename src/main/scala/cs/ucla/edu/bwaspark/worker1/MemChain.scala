@@ -344,8 +344,7 @@ object MemChain {
   }
 
   //generate chains for each read
-  def generateChains(opt: MemOptType, bwt: BWTType, l_pac: Long, len: Int,
-          seq: Array[Byte]): Array[MemChainType] = {
+  def generateChains(opt: MemOptType, bwt: BWTType, l_pac: Long, len: Int, seq: Array[Byte]): Array[MemChainType] = {
     
     if (debugLevel > 0) {
       println("Perform function generateChains")

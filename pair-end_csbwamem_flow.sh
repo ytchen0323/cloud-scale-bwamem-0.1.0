@@ -50,6 +50,7 @@ if [[ $TASK == kernel ]]; then
     echo "Starting kernel"
     BWAMEM_JAR=${BWAMEM_HOME}/target/cloud-scale-bwamem-0.2.2-assembly.jar
     SPARK_DRIVER_MEMORY=40g $SPARK_HOME/bin/spark-submit --executor-memory 40g \
+        --jars ${SWAT_HOME}/swat/target/swat-1.0-SNAPSHOT.jar,${APARAPI_HOME}/com.amd.aparapi/dist/aparapi.jar,${ASM_HOME}/lib/asm-5.0.3.jar,${ASM_HOME}/lib/asm-util-5.0.3.jar,${HOME}/cloud-scale-bwamem-0.1.0/target/cloud-scale-bwamem-0.2.2.jar,${HOME}/cloud-scale-bwamem-0.1.0/target/cloud-scale-bwamem-0.2.2-assembly.jar \
         --class cs.ucla.edu.bwaspark.BWAMEMSpark --total-executor-cores $TOTAL_CORES \
         --master spark://$(hostname):7077 \
         --driver-java-options "-XX:+PrintFlagsFinal" \

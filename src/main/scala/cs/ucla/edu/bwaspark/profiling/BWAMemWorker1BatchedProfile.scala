@@ -120,7 +120,6 @@ object BWAMemWorker1BatchedProfile {
         if (debugLevel == 1) println("Finished the calculation of pre-results of Smith-Waterman")
         if (debugLevel == 1) println("The number of reads in this pack is: " + numOfReads)
         regArrays(i) = new MemAlnRegArrayType
-        regArrays(i).maxLength = numOfSeedsArray(i)
         regArrays(i).regs = new Array[MemAlnRegType](numOfSeedsArray(i))
       }
       i = i+1;
@@ -139,11 +138,10 @@ object BWAMemWorker1BatchedProfile {
 
     if (debugLevel == 1) println("Finished the batched-processing part")
     regArrays.foreach(ele => {if (ele != null) ele.regs = ele.regs.filter(r => (r != null))})
-    regArrays.foreach(ele => {if (ele != null) ele.maxLength = ele.regs.length})
     i = 0;
     while (i < numOfReads) {
       if (regArrays(i) == null) readRetArray(i).regs = null
-      else readRetArray(i).regs = memSortAndDedup(regArrays(i), opt.maskLevelRedun).regs
+      else readRetArray(i).regs = memSortAndDedup(regArrays(i).regs, opt.maskLevelRedun)
       i = i+1
     }
 

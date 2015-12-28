@@ -25,9 +25,6 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.broadcast.Broadcast
 
 import cs.ucla.edu.bwaspark.datatype._
-import cs.ucla.edu.bwaspark.util.BNTSeqUtil._
-import cs.ucla.edu.bwaspark.util.SWUtil._
-import cs.ucla.edu.bwaspark.datatype._
 import cs.ucla.edu.bwaspark.worker1.BWAMemWorker1._
 import cs.ucla.edu.bwaspark.worker1.BWAMemWorker1Batched._
 import cs.ucla.edu.bwaspark.worker2.BWAMemWorker2._
@@ -41,11 +38,6 @@ import cs.ucla.edu.bwaspark.util.SWUtil._
 import cs.ucla.edu.avro.fastq._
 import cs.ucla.edu.bwaspark.commandline._
 import cs.ucla.edu.bwaspark.broadcast.ReferenceBroadcast
-import cs.ucla.edu.bwaspark.util.LocusEncode._
-import cs.ucla.edu.bwaspark.worker1.MemChain._
-import cs.ucla.edu.bwaspark.worker1.MemChainFilter._
-import cs.ucla.edu.bwaspark.worker1.MemChainToAlign._
-import cs.ucla.edu.bwaspark.worker1.MemSortAndDedup._
 
 import org.bdgenomics.formats.avro.AlignmentRecord
 import org.bdgenomics.adam.rdd.ADAMContext._
@@ -58,7 +50,6 @@ import java.io.BufferedReader
 import java.text.SimpleDateFormat
 import java.util.Calendar
 
-import scala.collection.mutable.ListBuffer
 import scala.concurrent._
 import ExecutionContext.Implicits.global
 import scala.util.{Success, Failure}
@@ -212,8 +203,7 @@ object FastMap {
     var isLocalRef = false
     if(bwamemArgs.localRef == 1) 
       isLocalRef = true
-    val bwaIdxGlobal = sc.broadcast(new ReferenceBroadcast(sc.broadcast(bwaIdx),
-                isLocalRef, fastaLocalInputPath))
+    val bwaIdxGlobal = sc.broadcast(new ReferenceBroadcast(sc.broadcast(bwaIdx), isLocalRef, fastaLocalInputPath))
 
     val bwaMemOptGlobal = sc.broadcast(bwaMemOpt)
 
@@ -269,208 +259,13 @@ object FastMap {
 
       // SWExtend() is not processed in a batched way (by default)
       if(!isSWExtBatched) {
-        val zipped = pairEndFASTQRDD.zipWithIndex()
-        val zipped_flipped = zipped.map(p => (p._2, p._1))
-
-        val split0 = zipped_flipped.map(pairSeq_index =>
-                (pairSeq_index._1, pairSeq_index._2.seq0))
-        val split1 = zipped_flipped.map(pairSeq_index =>
-                (pairSeq_index._1, pairSeq_index._2.seq1))
-
-        val seq_to_chains_filtered = (index_seq : Tuple2[Long, FASTQRecord]) => {
-            val opt : MemOptType = bwaMemOptGlobal.value
-            val bwt : BWTType = bwaIdxGlobal.value.value.bwt
-            val bns : BNTSeqType = bwaIdxGlobal.value.value.bns
-            val pac : Array[Byte] = bwaIdxGlobal.value.value.pac
-            val pes : Array[MemPeStat] = null
-            val seq : FASTQRecord = index_seq._2
-
-            val seqStr = new String(seq.getSeq.array)
-            val read: Array[Byte] = seqStr.toCharArray.map(ele => locusEncode(ele))
-
-            //first step: generate all possible MEM chains for this read
-            val chains = generateChains(opt, bwt, bns.l_pac, seq.getSeqLength, read)
-
-            //second step: filter chains
-            val chainsFiltered = memChainFilter(opt, chains)
-
-            (index_seq._1, (read, chainsFiltered))
-        }
-
-        val non_null_chains_to_regs = 
-          (index_read_chains : Tuple2[Long, Tuple2[Array[Byte], Array[MemChainType]]]) => {
-            val opt : MemOptType = bwaMemOptGlobal.value
-            val bns : BNTSeqType = bwaIdxGlobal.value.value.bns
-            val pac : Array[Byte] = bwaIdxGlobal.value.value.pac
-
-            val read = index_read_chains._2._1
-            val chainsFiltered = index_read_chains._2._2
-
-            // build the references of the seeds in each chain
-            var totalSeedNum = 0
-            chainsFiltered.foreach(chain => {
-              totalSeedNum += chain.seeds.length
-              } )
-
-            //third step: for each chain, from chain to aligns
-            var regArray = new MemAlnRegArrayType
-            regArray.maxLength = totalSeedNum
-            regArray.regs = new Array[MemAlnRegType](totalSeedNum)
-
-            val toExtendGlobal = new ListBuffer[Tuple11[Boolean, Long, Int, Int, Long, Long, Array[Byte], MemSeedType, MemAlnRegType, Array[Byte], Int]]()
-
-            for (i <- 0 until chainsFiltered.length) {
-              val chain = chainsFiltered(i)
- 
-              // calculate the maximum possible span of this alignment
-              val rmax : Array[Long] = getMaxSpan(opt, bns.l_pac, read.length, chain)
-              val rmax_0 = rmax(0)
-              val rmax_1 = rmax(1)
-
-              // retrieve the reference sequence
-              val ret = bnsGetSeq(bns.l_pac, pac, rmax_0, rmax_1)
-              val rseq = ret._1
-              val rlen = ret._2
-              assert(rlen == rmax_1 - rmax_0)
-
-              var srt: Array[SRTType] = new Array[SRTType](chain.seeds.length) 
-              // Setup the value of srt array
-              for (i <- 0 until chain.seeds.length) {
-                srt(i) = new SRTType(chain.seedsRefArray(i).len, i)
-              }
-              srt = srt.sortBy(s => (s.len, s.index))
-
-              val toExtend = memChainToAln(opt, bns.l_pac, pac, read.length, read,
-                      chain, regArray, rmax_0, rmax_1, srt)
-              val toLeftExtend = toExtend._1
-              val toRightExtend = toExtend._2
-
-              for (i <- toLeftExtend) {
-                toExtendGlobal +=
-                    new Tuple11[Boolean, Long, Int, Int, Long, Long, Array[Byte], MemSeedType, MemAlnRegType, Array[Byte], Int](
-                            true, index_read_chains._1, i._1, i._2, rmax_0, rmax_1, rseq,
-                            chain.seedsRefArray(srt(i._1).index), regArray.regs(i._2), read, totalSeedNum)
-              }
-              for (i <- toRightExtend) {
-                toExtendGlobal +=
-                    new Tuple11[Boolean, Long, Int, Int, Long, Long, Array[Byte], MemSeedType, MemAlnRegType, Array[Byte], Int](
-                            false, index_read_chains._1, i._1, i._2, rmax_0, rmax_1, rseq,
-                            chain.seedsRefArray(srt(i._1).index), regArray.regs(i._2), read, totalSeedNum)
-              }
-            }
-
-            toExtendGlobal
-          }
-
-        var run_extends = (extend : Tuple11[Boolean, Long, Int, Int, Long, Long, Array[Byte], MemSeedType, MemAlnRegType, Array[Byte], Int]) => {
-          val opt : MemOptType = bwaMemOptGlobal.value
-          val read : Array[Byte] = extend._10
-          val reg = extend._9
-          if (extend._1) {
-            // Left extend
-            val aw_0 = leftExtension(opt, extend._8, extend._5, read, extend._7, reg)
-            if (aw_0 > reg.width) reg.width = aw_0
-          } else {
-            // Right extend
-            val aw_1 = rightExtension(opt, extend._8, extend._5, extend._6, read, read.length, extend._7, reg)
-            if (aw_1 > reg.width) reg.width = aw_1
-          }
-
-          (extend._2, (extend._4, reg, extend._11))
-        }
-
-        var finalize_extends = (chainsfiltered_regarray : Tuple2[Array[MemChainType], Seq[Tuple3[Int, MemAlnRegType, Int]]]) => {
-            val opt : MemOptType = bwaMemOptGlobal.value
-            val chainsFiltered = chainsfiltered_regarray._1
-            val totalSeedNum : Int = chainsfiltered_regarray._2.head._3
-
-            var regArray = new MemAlnRegArrayType
-            regArray.maxLength = totalSeedNum
-            regArray.regs = new Array[MemAlnRegType](totalSeedNum)
-
-            for (ele <- chainsfiltered_regarray._2) {
-              regArray.regs(ele._1) = ele._2
-            }
-
-            var curLength = 0
-            for (j <- 0 until chainsFiltered.length) {
-              val chain = chainsFiltered(j)
-              var k = chain.seeds.length - 1
-              while (k >= 0) {
-                var srt: Array[SRTType] = new Array[SRTType](chain.seeds.length) 
-                // Setup the value of srt array
-                for (i <- 0 until chain.seeds.length) {
-                  srt(i) = new SRTType(chain.seedsRefArray(i).len, i)
-                }
-                srt = srt.sortBy(s => (s.len, s.index))
-
-                val seed = chain.seedsRefArray(srt(k).index)
-
-                val i = testExtension(opt, seed, regArray)
-            
-                // checkOverlapping does not modify seed
-                val checkoverlappingRet = if(i < regArray.curLength)
-                      checkOverlapping(k + 1, seed, chain, srt) else -1
-
-                if(i < regArray.curLength && checkoverlappingRet == chain.seeds.length) {
-                } else {
-                  regArray.regs(j).seedCov = computeSeedCoverage(
-                          chain, regArray.regs(j))
-                }
-                k -= 1
-              }
-            }
-
-            regArray.regs = regArray.regs.filter(r => (r != null))
-            regArray.maxLength = regArray.regs.length
-            assert(regArray.curLength == regArray.maxLength,
-                    "[Error] After filtering array elements")
-
-            //last step: sorting and deduplication
-            regArray = memSortAndDedup(regArray, opt.maskLevelRedun)
-            (index_read_chains._1, regArray.regs)
-          }
-
-        val chains0 = split0.map(seq_to_chains_filtered)
-        val chains1 = split1.map(seq_to_chains_filtered)
-
-        val filtered_chains0 = chains0.filter(index_read_chains =>
-                index_read_chains._2._2 != null)
-        val filtered_chains1 = chains1.filter(index_read_chains =>
-                index_read_chains._2._2 != null)
-
-        val regs0 = filtered_chains0.map(non_null_chains_to_regs)
-        val regs1 = filtered_chains1.map(non_null_chains_to_regs)
-
-        reads = zipped_flipped.cogroup(regs0, regs1).map(index_seqs_regs0_regs1 => {
-            assert(index_seqs_regs0_regs1._2._1.size == 1)
-
-            val record : PairEndFASTQRecord = index_seqs_regs0_regs1._2._1.head
-            val seq0 = record.seq0
-            val seq1 = record.seq1
-            val regs0 = if (index_seqs_regs0_regs1._2._2.size == 0) null else index_seqs_regs0_regs1._2._2.head
-            val regs1 = if (index_seqs_regs0_regs1._2._3.size == 0) null else index_seqs_regs0_regs1._2._3.head
-
-            var pairEndRead = new PairEndReadType
-            pairEndRead.seq0 = seq0
-            pairEndRead.regs0 = regs0
-            pairEndRead.seq1 = seq1
-            pairEndRead.regs1 = regs1
-
-            pairEndRead // return
-        })
-
-        // reads = pairEndFASTQRDD.map( pairSeq =>
-        //         pairEndBwaMemWorker1(bwaMemOptGlobal.value,
-        //             bwaIdxGlobal.value.value.bwt, bwaIdxGlobal.value.value.bns,
-        //             bwaIdxGlobal.value.value.pac, null, pairSeq) )
+        reads = pairEndFASTQRDD.map( pairSeq => pairEndBwaMemWorker1(bwaMemOptGlobal.value, bwaIdxGlobal.value.value.bwt, bwaIdxGlobal.value.value.bns, bwaIdxGlobal.value.value.pac, null, pairSeq) ) 
       }
       // SWExtend() is processed in a batched way. FPGA accelerating may be applied
       else {
-        def it2ArrayIt_W1(iter: Iterator[PairEndFASTQRecord]): Iterator[Array[PairEndReadType]] = {
+        def it2ArrayIt_W1(iter: Iterator[PairEndFASTQRecord], outputStream : AsyncOutputStream[ExtRet, ExtMetadata]) {
           val batchedDegree = swExtBatchSize
           var counter = 0
-          var ret: Vector[Array[PairEndReadType]] = scala.collection.immutable.Vector.empty
           var end1 = new Array[FASTQRecord](batchedDegree)
           var end2 = new Array[FASTQRecord](batchedDegree)
           
@@ -480,14 +275,14 @@ object FastMap {
             end2(counter) = pairEnd.seq1
             counter += 1
             if(counter == batchedDegree) {
-              ret = ret :+ pairEndBwaMemWorker1Batched(bwaMemOptGlobal.value, bwaIdxGlobal.value.value.bwt, bwaIdxGlobal.value.value.bns, bwaIdxGlobal.value.value.pac, 
+              pairEndBwaMemWorker1Batched(bwaMemOptGlobal.value, bwaIdxGlobal.value.value.bwt, bwaIdxGlobal.value.value.bns, bwaIdxGlobal.value.value.pac, 
                                                  null, end1, end2, batchedDegree, isFPGAAccSWExtend, fpgaSWExtThreshold, jniSWExtendLibPath)
               counter = 0
             }
           }
 
           if(counter != 0) {
-            ret = ret :+ pairEndBwaMemWorker1Batched(bwaMemOptGlobal.value, bwaIdxGlobal.value.value.bwt, bwaIdxGlobal.value.value.bns, bwaIdxGlobal.value.value.pac, 
+            pairEndBwaMemWorker1Batched(bwaMemOptGlobal.value, bwaIdxGlobal.value.value.bwt, bwaIdxGlobal.value.value.bns, bwaIdxGlobal.value.value.pac, 
                                                null, end1, end2, counter, isFPGAAccSWExtend, fpgaSWExtThreshold, jniSWExtendLibPath)
           }
 
@@ -501,9 +296,7 @@ object FastMap {
       reads.cache
 
       // MemPeStat (Reduce step)
-      val peStatPrepRDD = reads.map( pairSeq =>
-              memPeStatPrep(bwaMemOptGlobal.value,
-                  bwaIdxGlobal.value.value.bns.l_pac, pairSeq) )
+      val peStatPrepRDD = reads.map( pairSeq => memPeStatPrep(bwaMemOptGlobal.value, bwaIdxGlobal.value.value.bns.l_pac, pairSeq) )
       val peStatPrepArray = peStatPrepRDD.collect
 
       // *****   PROFILING    *******
@@ -519,8 +312,7 @@ object FastMap {
       println("@MemPeStat")
       j = 0
       while(j < 4) {
-        println("pes(" + j + "): " + pes(j).low + " " + pes(j).high + " " +
-                pes(j).failed + " " + pes(j).avg + " " + pes(j).std)
+        println("pes(" + j + "): " + pes(j).low + " " + pes(j).high + " " + pes(j).failed + " " + pes(j).avg + " " + pes(j).std)
         j += 1
       }
         
@@ -709,10 +501,7 @@ object FastMap {
       // NOTE: need to be modified!!!
       // Normal read-based processing
       else {
-        val count = reads.map(pairSeq =>
-                pairEndBwaMemWorker2(bwaMemOptGlobal.value,
-                    bwaIdxGlobal.value.value.bns, bwaIdxGlobal.value.value.pac,
-                    0, pes, pairSeq, samHeader) ).count
+        val count = reads.map(pairSeq => pairEndBwaMemWorker2(bwaMemOptGlobal.value, bwaIdxGlobal.value.value.bns, bwaIdxGlobal.value.value.pac, 0, pes, pairSeq, samHeader) ).count
         numProcessed += count.toLong
       }
  
@@ -721,7 +510,7 @@ object FastMap {
       worker2Time += (worker2EndTime - calMetricsEndTime)
     }
 
-
+   
     if(outputChoice == SAM_OUT_LOCAL) {
       println("[DEBUG] Main thread, Final iteration, Before: isSAMWriteDone = " + isSAMWriteDone)
       while(!isSAMWriteDone) {

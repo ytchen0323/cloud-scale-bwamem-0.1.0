@@ -870,7 +870,7 @@ object MemChainToAlignBatchedProfile {
     var maxGap: Int = -1
     var minDist: Int = -1
     var w: Int = -1
-    var breakIdx: Int = regArray.maxLength
+    var breakIdx: Int = regArray.regs.length
     var i = 0
     var isBreak = false
 

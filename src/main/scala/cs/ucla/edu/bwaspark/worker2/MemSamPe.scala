@@ -414,9 +414,7 @@ object MemSamPe {
           mateRegsUpdated = mateRegsUpdated.sortBy(seq => (seq.score))
           regArray.regs = mateRegsUpdated.toArray
           regArray.curLength = mateRegsUpdated.size
-          regArray.maxLength = mateRegsUpdated.size
-          regArray = memSortAndDedup(regArray, opt.maskLevelRedun)
-          
+          regArray.regs = memSortAndDedup(regArray.regs, opt.maskLevelRedun)
         }
       }
 
@@ -1224,8 +1222,7 @@ object MemSamPe {
           mateRegsUpdated = mateRegsUpdated.sortBy(seq => (seq.score))
           regArray.regs = mateRegsUpdated.toArray
           regArray.curLength = mateRegsUpdated.size
-          regArray.maxLength = mateRegsUpdated.size
-          regArray = memSortAndDedup(regArray, opt.maskLevelRedun)
+          regArray.regs = memSortAndDedup(regArray.regs, opt.maskLevelRedun)
           
         }
       }

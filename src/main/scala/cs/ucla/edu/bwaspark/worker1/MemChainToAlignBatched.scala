@@ -18,12 +18,15 @@
 
 package cs.ucla.edu.bwaspark.worker1
 
+import org.apache.spark.rdd.cl.AsyncOutputStream
+
 import scala.collection.mutable.MutableList
 
 import cs.ucla.edu.bwaspark.datatype._
 import cs.ucla.edu.bwaspark.util.BNTSeqUtil._
 import cs.ucla.edu.bwaspark.util.SWUtil._
 import cs.ucla.edu.bwaspark.debug.DebugFlag._
+import cs.ucla.edu.avro.fastq._
 
 import accUCLA.api._
 import java.util._
@@ -193,10 +196,10 @@ object MemChainToAlignBatched {
 
   //Run DPs on FPGA
   def runOnFPGA(taskNum: Int, //number of tasks
-		TOTAL_TASK_NUM: Int,
-                tasks: Array[ExtParam], // task array
-                results: Array[ExtRet] // result array
-                ) {
+          TOTAL_TASK_NUM: Int,
+          tasks: Array[ExtParam], // task array
+          results: Array[ExtRet] // result array
+          ) {
       //Sizes of Kernel Components
       val DATA_SIZE = TOTAL_TASK_NUM * 256
       val RESULT_SIZE = TOTAL_TASK_NUM * 16
@@ -378,43 +381,53 @@ object MemChainToAlignBatched {
   }
 
   def memChainToAlnBatched(opt: MemOptType,
-                           pacLen: Long,
-                           pac: Array[Byte],
-                           queryLenArray: Array[Int],
-                           queryArray: Array[Array[Byte]],
-                           numOfReads: Int,
-                           preResultsOfSW: Array[Array[SWPreResultType]],
-                           chainsFilteredArray: Array[Array[MemChainType]],
-                           regArrays: Array[MemAlnRegArrayType],
-			   useFPGA: Boolean,
-			   threshold: Int
-                          ){
+          pacLen: Long,
+          pac: Array[Byte],
+          queryLenArray: Array[Int],
+          queryArray: Array[Array[Byte]],
+          numOfReads: Int,
+          preResultsOfSW: Array[Array[SWPreResultType]],
+          chainsFilteredArray: Array[Array[MemChainType]],
+          regArrays: Array[MemAlnRegArrayType],
+          useFPGA: Boolean,
+          threshold: Int,
+          isEnd0 : Boolean,
+          seqArray : Array[FASTQRecord],
+          outputStream : AsyncOutputStream[ExtRet, ExtMetadata], partitionId : Long) {
 
     // The coordinate for each read: (chain No., seed No.)
     var coordinates: Array[Array[Int]] = new Array[Array[Int]](numOfReads)
     var i = 0
     while (i < numOfReads) {
-    	coordinates(i) = new Array[Int](2)
-	    i = i+1
+      coordinates(i) = new Array[Int](2)
+	  i = i+1
     }
 
-    def initializeCoordinates(coordinates: Array[Array[Int]], chainsFilteredArray: Array[Array[MemChainType]], numOfReads: Int): Boolean = {
-      var isFinished = true;
+    def initializeCoordinates(coordinates: Array[Array[Int]],
+        chainsFilteredArray: Array[Array[MemChainType]], numOfReads: Int):
+        Boolean = {
+      var isFinished = true
       var i = 0
       while (i < numOfReads) {
         coordinates(i)(0) = 0
-        // only if there is at least one chain corresponding to read i, the y coordinate will be assigned
+        /*
+         * only if there is at least one chain corresponding to read i, the y
+         * coordinate will be assigned
+         */
         if (chainsFilteredArray(i) != null) {
           coordinates(i)(1) = chainsFilteredArray(i)(0).seeds.length - 1
           isFinished = false;
+        } else {
+          coordinates(i)(1) = -1
         }
-        else coordinates(i)(1) = -1
         i = i + 1
       }
       isFinished
     }
 
-    def incrementCoordinates(coordinates: Array[Array[Int]], chainsFilteredArray: Array[Array[MemChainType]], numOfReads: Int, start: Int, end: Int): (Boolean, Int, Int) = {
+    def incrementCoordinates(coordinates: Array[Array[Int]],
+        chainsFilteredArray: Array[Array[MemChainType]], numOfReads: Int,
+        start: Int, end: Int): (Boolean, Int, Int) = {
       var isFinished = true;
       var curStart = start;
       var curEnd = end;
@@ -470,24 +483,31 @@ object MemChainToAlignBatched {
 
     while (!isFinished) {
 
-	taskIdx = 0
-	var i = start;
-	while (i < end) {
-	regFlags(i) = false
-	if (coordinates(i)(1) >= 0) {
-	  seedArray(i) = chainsFilteredArray(i)(coordinates(i)(0)).seedsRefArray(preResultsOfSW(i)(coordinates(i)(0)).srt(coordinates(i)(1)).index)
-	  extensionFlags(i) = testExtension(opt, seedArray(i), regArrays(i))
-	  overlapFlags(i) = -1
-	  if (extensionFlags(i) < regArrays(i).curLength) overlapFlags(i) = checkOverlapping(coordinates(i)(1)+1, seedArray(i), chainsFilteredArray(i)(coordinates(i)(0)), preResultsOfSW(i)(coordinates(i)(0)).srt)
-	  if (extensionFlags(i) < regArrays(i).curLength && overlapFlags(i) == chainsFilteredArray(i)(coordinates(i)(0)).seeds.length) {
-	    preResultsOfSW(i)(coordinates(i)(0)).srt(coordinates(i)(1)).index = MARKED
-	  }
-	  else {
-            regFlags(i) = true
-            var reg = new MemAlnRegType
-            reg.width = opt.w
-	    // default values
-	    //{
+	  taskIdx = 0
+	  var i = start;
+      while (i < end) {
+        regFlags(i) = false
+        if (coordinates(i)(1) >= 0) {
+          seedArray(i) = chainsFilteredArray(i)(coordinates(i)(0))
+              .seedsRefArray(preResultsOfSW(i)(coordinates(i)(0))
+                      .srt(coordinates(i)(1)).index)
+          extensionFlags(i) = testExtension(opt, seedArray(i), regArrays(i))
+          overlapFlags(i) = -1
+          if (extensionFlags(i) < regArrays(i).curLength) {
+            overlapFlags(i) = checkOverlapping(coordinates(i)(1)+1, seedArray(i),
+                    chainsFilteredArray(i)(coordinates(i)(0)),
+                    preResultsOfSW(i)(coordinates(i)(0)).srt)
+          }
+
+          if (extensionFlags(i) < regArrays(i).curLength && overlapFlags(i) ==
+                  chainsFilteredArray(i)(coordinates(i)(0)).seeds.length) {
+            preResultsOfSW(i)(coordinates(i)(0)).srt(coordinates(i)(1)).index = MARKED
+          } else {
+              regFlags(i) = true
+              var reg = new MemAlnRegType
+              reg.width = opt.w
+              // default values
+              //{
               reg.score = seedArray(i).len * opt.a
               reg.trueScore = seedArray(i).len * opt.a
               reg.qBeg = 0
@@ -496,119 +516,137 @@ object MemChainToAlignBatched {
               reg.rEnd = seedArray(i).rBeg + seedArray(i).len
               // push the current align reg into the temporary array
               newRegs(i) = reg
-            //}
-            if (seedArray(i).qBeg > 0 || (seedArray(i).qBeg + seedArray(i).len) != queryLenArray(i)) {
-	      var extParam = new ExtParam
-              extParam.leftQlen = seedArray(i).qBeg
-              var ii = 0
-	      if (extParam.leftQlen > 0) {
-                extParam.leftQs = new Array[Byte](extParam.leftQlen)
-                ii = 0
-                while(ii < extParam.leftQlen) {
-                  extParam.leftQs(ii) = queryArray(i)(extParam.leftQlen - 1 - ii)
-                  ii += 1
-                }
-	        extParam.leftRlen = (seedArray(i).rBeg - (preResultsOfSW(i)(coordinates(i)(0)).rmax)(0)).toInt
-	        extParam.leftRs = new Array[Byte](extParam.leftRlen)
-                ii = 0
-                while(ii < extParam.leftRlen) {
-                  extParam.leftRs(ii) = preResultsOfSW(i)(coordinates(i)(0)).rseq(extParam.leftRlen - 1 - ii)
-                  ii += 1
-                }
-	      }
-	      else {
-		extParam.leftQs = null
-		extParam.leftRlen = 0
-		extParam.leftRs = null
-	      }
+              //}
+              if (seedArray(i).qBeg > 0 ||
+                      (seedArray(i).qBeg + seedArray(i).len) != queryLenArray(i)) {
+                  var extParam = new ExtParam
+                  extParam.leftQlen = seedArray(i).qBeg
+                  var ii = 0
+                  if (extParam.leftQlen > 0) {
+                      extParam.leftQs = new Array[Byte](extParam.leftQlen)
+                      ii = 0
+                      while(ii < extParam.leftQlen) {
+                          extParam.leftQs(ii) = queryArray(i)(extParam.leftQlen - 1 - ii)
+                          ii += 1
+                      }
+                      extParam.leftRlen = (seedArray(i).rBeg -
+                              (preResultsOfSW(i)(coordinates(i)(0)).rmax)(0)).toInt
+                      extParam.leftRs = new Array[Byte](extParam.leftRlen)
+                      ii = 0
+                      while(ii < extParam.leftRlen) {
+                          extParam.leftRs(ii) =
+                              preResultsOfSW(i)(coordinates(i)(0)).rseq(
+                                      extParam.leftRlen - 1 - ii)
+                          ii += 1
+                      }
+                  } else {
+                      extParam.leftQs = null
+                      extParam.leftRlen = 0
+                      extParam.leftRs = null
+                  }
 
-	      var qe = seedArray(i).qBeg + seedArray(i).len
-              extParam.rightQlen = queryLenArray(i) - qe
-	      if (extParam.rightQlen > 0) {
-                extParam.rightQs = new Array[Byte](extParam.rightQlen)
-                ii = 0
-                while(ii < extParam.rightQlen) {
-                  extParam.rightQs(ii) = queryArray(i)(ii + qe)
-                  ii += 1
-                }
-	        var re = seedArray(i).rBeg + seedArray(i).len - preResultsOfSW(i)(coordinates(i)(0)).rmax(0)
-	        extParam.rightRlen = (preResultsOfSW(i)(coordinates(i)(0)).rmax(1) - preResultsOfSW(i)(coordinates(i)(0)).rmax(0) - re).toInt
-	        extParam.rightRs = new Array[Byte](extParam.rightRlen)
-                ii = 0
-                while(ii < extParam.rightRlen) {
-                  extParam.rightRs(ii) = preResultsOfSW(i)(coordinates(i)(0)).rseq(ii + re.toInt)
-                  ii += 1
-                }
-	      }
-	      else {
-		extParam.rightQs = null
-		extParam.rightRlen = 0
-		extParam.rightRs = null
-	      }
-	      extParam.w = opt.w
-	      extParam.mat = opt.mat
-	      extParam.oDel = opt.oDel
-	      extParam.oIns = opt.oIns
-	      extParam.eDel = opt.eDel
-	      extParam.eIns = opt.eIns
-	      extParam.penClip5 = opt.penClip5
-	      extParam.penClip3 = opt.penClip3
-	      extParam.zdrop = opt.zdrop
-	      extParam.h0 = seedArray(i).len * opt.a
-	      extParam.regScore = newRegs(i).score
-	      extParam.qBeg = seedArray(i).qBeg
-              extParam.idx = i
-              fpgaExtTasks(taskIdx) = extParam
-              taskIdx = taskIdx + 1
-            }
-	  }
-	}
-	i = i+1
-      }
-
-      if (useFPGA == true) {
-        if (taskIdx >= threshold) {
-          //val ret = runOnFPGA(taskIdx, numOfReads, fpgaExtTasks, fpgaExtResults)
-          val ret = runOnFPGAJNI(taskIdx, fpgaExtTasks, fpgaExtResults)
-	}
-	else {
-          i = 0;
-          while (i < taskIdx) {
-              fpgaExtResults(i) = extension(fpgaExtTasks(i))
-              i = i+1
+                  var qe = seedArray(i).qBeg + seedArray(i).len
+                  extParam.rightQlen = queryLenArray(i) - qe
+                  if (extParam.rightQlen > 0) {
+                      extParam.rightQs = new Array[Byte](extParam.rightQlen)
+                      ii = 0
+                      while(ii < extParam.rightQlen) {
+                          extParam.rightQs(ii) = queryArray(i)(ii + qe)
+                          ii += 1
+                      }
+                      var re = seedArray(i).rBeg + seedArray(i).len -
+                          preResultsOfSW(i)(coordinates(i)(0)).rmax(0)
+                      extParam.rightRlen =
+                            (preResultsOfSW(i)(coordinates(i)(0)).rmax(1) -
+                            preResultsOfSW(i)(coordinates(i)(0)).rmax(0) - re).toInt
+                      extParam.rightRs = new Array[Byte](extParam.rightRlen)
+                      ii = 0
+                      while(ii < extParam.rightRlen) {
+                          extParam.rightRs(ii) =
+                              preResultsOfSW(i)(coordinates(i)(0)).rseq(ii + re.toInt)
+                          ii += 1
+                      }
+                  } else {
+                      extParam.rightQs = null
+                      extParam.rightRlen = 0
+                      extParam.rightRs = null
+                  }
+                  extParam.w = opt.w
+                  extParam.mat = opt.mat
+                  extParam.oDel = opt.oDel
+                  extParam.oIns = opt.oIns
+                  extParam.eDel = opt.eDel
+                  extParam.eIns = opt.eIns
+                  extParam.penClip5 = opt.penClip5
+                  extParam.penClip3 = opt.penClip3
+                  extParam.zdrop = opt.zdrop
+                  extParam.h0 = seedArray(i).len * opt.a
+                  extParam.regScore = newRegs(i).score
+                  extParam.qBeg = seedArray(i).qBeg
+                  extParam.idx = i
+                  fpgaExtTasks(taskIdx) = extParam
+                  taskIdx = taskIdx + 1
+              }
           }
-	}
-      }
-      else {
-        i = 0;
-        while (i < taskIdx) {
-            fpgaExtResults(i) = extension(fpgaExtTasks(i))
-            i = i+1
         }
+        i = i+1
       }
+
+      System.err.println("SWAT: useFPGA=" + useFPGA + " taskIdx=" + taskIdx)
+      val trace : Array[StackTraceElement] = Thread.currentThread.getStackTrace
+      for (frame <- trace) {
+        System.err.println(frame.toString)
+      }
+      System.err.println
+
+      assert(useFPGA == false)
 
       i = 0;
       while (i < taskIdx) {
-        var tmpIdx = fpgaExtResults(i).idx
-        newRegs(tmpIdx).qBeg = fpgaExtResults(i).qBeg
-        newRegs(tmpIdx).rBeg = fpgaExtResults(i).rBeg + seedArray(tmpIdx).rBeg
-        newRegs(tmpIdx).qEnd = fpgaExtResults(i).qEnd + seedArray(tmpIdx).qBeg + seedArray(tmpIdx).len
-        newRegs(tmpIdx).rEnd = fpgaExtResults(i).rEnd + seedArray(tmpIdx).rBeg + seedArray(tmpIdx).len
-        newRegs(tmpIdx).score = fpgaExtResults(i).score
-        newRegs(tmpIdx).trueScore = fpgaExtResults(i).trueScore
-        newRegs(tmpIdx).width = fpgaExtResults(i).width
-        i = i+1;
+        val tmpIdx = fpgaExtTasks(i).idx
+
+        val metadata = new ExtMetadata(
+                chainsFilteredArray(tmpIdx)(coordinates(tmpIdx)(0)), isEnd0,
+                seqArray(tmpIdx))
+
+        outputStream.spawn(() =>
+                extension(fpgaExtTasks(i), partitionId, numOfReads,
+                regFlags(tmpIdx), regArrays(tmpIdx).regs.length,
+                seedArray(tmpIdx).rBeg, seedArray(tmpIdx).qBeg,
+                seedArray(tmpIdx).len), Some(metadata))
+
+        // fpgaExtResults(i) = extension(fpgaExtTasks(i))
+        i = i+1
       }
-      i = start;
-      while (i < end) {
-        if (regFlags(i) == true) {
-          newRegs(i).seedCov = computeSeedCoverage(chainsFilteredArray(i)(coordinates(i)(0)), newRegs(i))
-          regArrays(i).regs(regArrays(i).curLength) = newRegs(i)
-          regArrays(i).curLength += 1
-	}
-	i = i+1
-      }
-      val increRes = incrementCoordinates(coordinates, chainsFilteredArray, numOfReads, start, end)
+
+      // i = 0;
+      // while (i < taskIdx) {
+      //   var tmpIdx = fpgaExtResults(i).idx
+      //   newRegs(tmpIdx).qBeg = fpgaExtResults(i).qBeg
+      //   newRegs(tmpIdx).rBeg = fpgaExtResults(i).rBeg + seedArray(tmpIdx).rBeg
+      //   newRegs(tmpIdx).qEnd = fpgaExtResults(i).qEnd + seedArray(tmpIdx).qBeg +
+      //         seedArray(tmpIdx).len
+      //   newRegs(tmpIdx).rEnd = fpgaExtResults(i).rEnd + seedArray(tmpIdx).rBeg +
+      //         seedArray(tmpIdx).len
+      //   newRegs(tmpIdx).score = fpgaExtResults(i).score
+      //   newRegs(tmpIdx).trueScore = fpgaExtResults(i).trueScore
+      //   newRegs(tmpIdx).width = fpgaExtResults(i).width
+      //   i = i+1;
+      // }
+
+      // i = start;
+      // while (i < end) {
+      //   if (regFlags(i) == true) {
+      //     newRegs(i).seedCov = computeSeedCoverage(
+      //             chainsFilteredArray(i)(coordinates(i)(0)), newRegs(i))
+      //     regArrays(i).regs(regArrays(i).curLength) = newRegs(i)
+      //     regArrays(i).curLength += 1
+	  //   }
+	  //   i = i+1
+      // }
+
+      val increRes = incrementCoordinates(coordinates, chainsFilteredArray,
+              numOfReads, start, end)
       isFinished = increRes._1
       start = increRes._2
       end = increRes._3
@@ -627,16 +665,16 @@ object MemChainToAlignBatched {
     val lenIns = ((qLen * opt.a - opt.oIns).toDouble / opt.eIns.toDouble + 1.0).toInt
     var len = -1
 
-    if(lenDel > lenIns)
+    if (lenDel > lenIns)
       len = lenDel
     else
       len = lenIns
 
-    if(len <= 1) len = 1
+    if (len <= 1) len = 1
 
     val tmp = opt.w << 1
 
-    if(len < tmp) len
+    if (len < tmp) len
     else tmp
   }
  	
@@ -691,7 +729,7 @@ object MemChainToAlignBatched {
     var maxGap: Int = -1
     var minDist: Int = -1
     var w: Int = -1
-    var breakIdx: Int = regArray.maxLength
+    var breakIdx: Int = regArray.regs.length
     var i = 0
     var isBreak = false
 
@@ -786,7 +824,9 @@ object MemChainToAlignBatched {
     else i
   }
 
-  private def extension(extParam: ExtParam): ExtRet = {
+  private def extension(extParam: ExtParam, partitionId : Long,
+      numOfReads : Int, regFlag : Boolean, maxLength : Int,
+      seedArray_rBeg : Long, seedArray_qBeg : Int, seedArray_len : Int): ExtRet = {
     var aw0 = extParam.w
     var aw1 = extParam.w
     var qle = -1
@@ -810,8 +850,10 @@ object MemChainToAlignBatched {
       while(i < MAX_BAND_TRY && !isBreak) {
         prev = regScore
         aw0 = extParam.w << i
-        //val results = SWExtend(seed.qBeg, qs, tmp, rs, 5, opt.mat, opt.oDel, opt.eDel, opt.oIns, opt.eIns, aw, opt.penClip5, opt.zdrop, seed.len * opt.a)
-        val results = SWExtend(extParam.leftQlen, extParam.leftQs, extParam.leftRlen, extParam.leftRs, 5, extParam.mat, extParam.oDel, extParam.eDel, extParam.oIns, extParam.eIns, aw0, extParam.penClip5, extParam.zdrop, extParam.h0)
+        val results = SWExtend(extParam.leftQlen, extParam.leftQs,
+                extParam.leftRlen, extParam.leftRs, 5, extParam.mat,
+                extParam.oDel, extParam.eDel, extParam.oIns, extParam.eIns, aw0,
+                extParam.penClip5, extParam.zdrop, extParam.h0)
         regScore = results(0)
         qle = results(1)
         tle = results(2)
@@ -848,7 +890,10 @@ object MemChainToAlignBatched {
       while(i < MAX_BAND_TRY && !isBreak) {
         prev = regScore
         aw1 = extParam.w << i
-        val results = SWExtend(extParam.rightQlen, extParam.rightQs, extParam.rightRlen, extParam.rightRs, 5, extParam.mat, extParam.oDel, extParam.eDel, extParam.oIns, extParam.eIns, aw1, extParam.penClip3, extParam.zdrop, sc0)
+        val results = SWExtend(extParam.rightQlen, extParam.rightQs,
+                extParam.rightRlen, extParam.rightRs, 5, extParam.mat,
+                extParam.oDel, extParam.eDel, extParam.oIns, extParam.eIns, aw1,
+                extParam.penClip3, extParam.zdrop, sc0)
         regScore = results(0)
         qle = results(1)
         tle = results(2)
@@ -877,6 +922,14 @@ object MemChainToAlignBatched {
     if (aw0 > aw1) extRet.width = aw0
     else extRet.width = aw1
     extRet.idx = extParam.idx
+
+    extRet.partitionId = partitionId
+    extRet.numOfReads = numOfReads
+    extRet.regFlag = regFlag
+    extRet.maxLength = maxLength
+    extRet.seedArray_rBeg = seedArray_rBeg
+    extRet.seedArray_qBeg = seedArray_qBeg
+    extRet.seedArray_len = seedArray_len
 
     //println(", qb " + regResult.qBeg + ", rb " + regResult.rBeg + ", truesc " + regResult.trueScore)   // testing
     extRet

@@ -18,6 +18,8 @@
 
 package cs.ucla.edu.bwaspark.datatype
 
+import cs.ucla.edu.avro.fastq._
+
 class ExtParam() {
 	var leftQs: Array[Byte] = _
 	var leftQlen: Int = -1
@@ -76,6 +78,7 @@ class ExtParam() {
 	}
 }
 
+@serializable
 class ExtRet() {
 	var qBeg: Int = -1
 	var rBeg: Long = -1
@@ -85,6 +88,15 @@ class ExtRet() {
 	var trueScore: Int = -1
 	var width: Int = -1
 	var idx: Int = -1
+
+    var partitionId : Long = -1
+    var numOfReads : Int = -1
+    var regFlag : Boolean = false
+    var maxLength : Int = 0
+    var seedArray_rBeg : Long = 0
+    var seedArray_qBeg : Int = 0
+    var seedArray_len : Int = 0
+
 	def display() {
 		println("qBeg: " + qBeg)
 		println("rBeg: " + rBeg)
@@ -95,4 +107,11 @@ class ExtRet() {
 		println("width: " + width)
 		println("idx: " + idx)
 	}
+}
+
+@serializable
+class ExtMetadata(chainFiltered : MemChainType, end0 : Boolean, seq : FASTQRecord) {
+  def getChainFiltered() : MemChainType = { chainFiltered }
+  def getEnd0() : Boolean = { end0 }
+  def getSeq() : FASTQRecord = { seq }
 }
