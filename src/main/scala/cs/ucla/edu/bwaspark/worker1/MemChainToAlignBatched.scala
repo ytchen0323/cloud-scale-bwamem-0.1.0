@@ -942,7 +942,7 @@ object MemChainToAlignBatched {
     *  @param chain the input chain
     *  @param reg the current align register after left/right extension is done 
     */
-  private def computeSeedCoverage(chain: MemChainType, reg: MemAlnRegType): Int = {
+  def computeSeedCoverage(chain: MemChainType, reg: MemAlnRegType): Int = {
     var seedcov = 0
     var i = 0
     

@@ -18,6 +18,9 @@
 
 package cs.ucla.edu.bwaspark
 
+import org.apache.spark.rdd.cl.AsyncOutputStream
+import org.apache.spark.rdd.cl.CLWrapper
+
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext._
 import org.apache.spark.SparkConf
@@ -27,6 +30,8 @@ import org.apache.spark.broadcast.Broadcast
 import cs.ucla.edu.bwaspark.datatype._
 import cs.ucla.edu.bwaspark.worker1.BWAMemWorker1._
 import cs.ucla.edu.bwaspark.worker1.BWAMemWorker1Batched._
+import cs.ucla.edu.bwaspark.worker1.MemChainToAlignBatched._
+import cs.ucla.edu.bwaspark.worker1.MemSortAndDedup._
 import cs.ucla.edu.bwaspark.worker2.BWAMemWorker2._
 import cs.ucla.edu.bwaspark.worker2.MemSamPe._
 import cs.ucla.edu.bwaspark.sam.SAMHeader
@@ -263,33 +268,116 @@ object FastMap {
       }
       // SWExtend() is processed in a batched way. FPGA accelerating may be applied
       else {
-        def it2ArrayIt_W1(iter: Iterator[PairEndFASTQRecord], outputStream : AsyncOutputStream[ExtRet, ExtMetadata]) {
-          val batchedDegree = swExtBatchSize
-          var counter = 0
-          var end1 = new Array[FASTQRecord](batchedDegree)
-          var end2 = new Array[FASTQRecord](batchedDegree)
-          
-          while(iter.hasNext) {
-            val pairEnd = iter.next
-            end1(counter) = pairEnd.seq0
-            end2(counter) = pairEnd.seq1
-            counter += 1
-            if(counter == batchedDegree) {
-              pairEndBwaMemWorker1Batched(bwaMemOptGlobal.value, bwaIdxGlobal.value.value.bwt, bwaIdxGlobal.value.value.bns, bwaIdxGlobal.value.value.pac, 
-                                                 null, end1, end2, batchedDegree, isFPGAAccSWExtend, fpgaSWExtThreshold, jniSWExtendLibPath)
-              counter = 0
+          def it2ArrayIt_W1(iter: Iterator[Tuple2[PairEndFASTQRecord, Long]],
+                  outputStream : AsyncOutputStream[ExtRet, ExtMetadata]) {
+              val batchedDegree = swExtBatchSize
+              var counter = 0
+              var end1 = new Array[FASTQRecord](batchedDegree)
+              var end2 = new Array[FASTQRecord](batchedDegree)
+              var partitionId : Long = -1
+
+              while (iter.hasNext) {
+                  val n = iter.next
+                  val pairEnd = n._1
+                  if (partitionId == -1) {
+                    partitionId = n._2
+                  }
+                  end1(counter) = pairEnd.seq0
+                  end2(counter) = pairEnd.seq1
+                  counter += 1
+                  if (counter == batchedDegree) {
+                      pairEndBwaMemWorker1Batched(bwaMemOptGlobal.value,
+                              bwaIdxGlobal.value.value.bwt,
+                              bwaIdxGlobal.value.value.bns,
+                              bwaIdxGlobal.value.value.pac, 
+                              null, end1, end2, batchedDegree,
+                              isFPGAAccSWExtend, fpgaSWExtThreshold,
+                              jniSWExtendLibPath, outputStream, partitionId)
+                      counter = 0
+                  }
+              }
+
+              if (counter != 0) {
+                  pairEndBwaMemWorker1Batched(bwaMemOptGlobal.value,
+                          bwaIdxGlobal.value.value.bwt,
+                          bwaIdxGlobal.value.value.bns,
+                          bwaIdxGlobal.value.value.pac, 
+                          null, end1, end2, counter, isFPGAAccSWExtend,
+                          fpgaSWExtThreshold, jniSWExtendLibPath, outputStream, partitionId)
+              }
+          }
+
+          val zipped = pairEndFASTQRDD.zipWithIndex
+          val wrapped = CLWrapper.cl(zipped)
+          val flat : RDD[Tuple2[ExtRet, Option[ExtMetadata]]] =
+                wrapped.mapPartitionsAsync(it2ArrayIt_W1)
+          val byPartition = flat.map(tuple => (tuple._1.partitionId, (tuple._1, tuple._2.get)))
+          val grouped = byPartition.groupByKey.map(tuple => {
+            val partitionId = tuple._1
+
+            var pairEndReadArray : Array[PairEndReadType] = null
+            var numOfReads : Int = 0
+            
+            for (t <- tuple._2) {
+              val ret = t._1
+              val metadata = t._2
+              val tmpIdx = ret.idx
+
+              if (pairEndReadArray == null) {
+                numOfReads = ret.numOfReads
+                pairEndReadArray = new Array[PairEndReadType](numOfReads)
+                for (i <- 0 until numOfReads) {
+                  pairEndReadArray(i) = new PairEndReadType
+                  pairEndReadArray(i).regs0 = new Array[MemAlnRegType](numOfReads)
+                  pairEndReadArray(i).regs1 = new Array[MemAlnRegType](numOfReads)
+                }
+              }
+
+              if (ret.regFlag) {
+                val reg : MemAlnRegType = new MemAlnRegType
+                reg.qBeg = ret.qBeg
+                reg.rBeg = ret.rBeg + ret.seedArray_rBeg
+                reg.qEnd = ret.qEnd + ret.seedArray_qBeg + ret.seedArray_len
+                reg.rEnd = ret.rEnd + ret.seedArray_rBeg + ret.seedArray_len
+                reg.score = ret.score
+                reg.trueScore = ret.trueScore
+                reg.width = ret.width
+                reg.seedCov = computeSeedCoverage(metadata.getChainFiltered, reg)
+
+                var index : Int = 0
+                if (metadata.getEnd0) {
+                  while (pairEndReadArray(tmpIdx).regs0(index) == null) {
+                    index += 1
+                  }
+                  pairEndReadArray(tmpIdx).regs0(index) = reg
+                  pairEndReadArray(tmpIdx).seq0 = metadata.getSeq
+                } else {
+                  while (pairEndReadArray(tmpIdx).regs1(index) == null) {
+                    index += 1
+                  }
+                  pairEndReadArray(tmpIdx).regs1(index) = reg
+                  pairEndReadArray(tmpIdx).seq1 = metadata.getSeq
+                }
+              }
             }
-          }
 
-          if(counter != 0) {
-            pairEndBwaMemWorker1Batched(bwaMemOptGlobal.value, bwaIdxGlobal.value.value.bwt, bwaIdxGlobal.value.value.bns, bwaIdxGlobal.value.value.pac, 
-                                               null, end1, end2, counter, isFPGAAccSWExtend, fpgaSWExtThreshold, jniSWExtendLibPath)
-          }
+            for (i <- 0 until numOfReads) {
+              pairEndReadArray(i).regs0 = pairEndReadArray(i).regs0.filter(r => (r != null))
+              pairEndReadArray(i).regs1 = pairEndReadArray(i).regs1.filter(r => (r != null))
 
-          ret.toArray.iterator
-        }
+              pairEndReadArray(i).regs0 = memSortAndDedup(
+                      pairEndReadArray(i).regs0,
+                      bwaMemOptGlobal.value.maskLevelRedun)
+              pairEndReadArray(i).regs1 = memSortAndDedup(
+                      pairEndReadArray(i).regs1,
+                      bwaMemOptGlobal.value.maskLevelRedun)
+            }
 
-        reads = pairEndFASTQRDD.mapPartitions(it2ArrayIt_W1).flatMap(s => s)
+            pairEndReadArray
+          })
+
+          reads = grouped.flatMap(s => s)
+          // reads = pairEndFASTQRDD.mapPartitions(it2ArrayIt_W1).flatMap(s => s)
       }      
 
       pairEndFASTQRDD.unpersist(true)
