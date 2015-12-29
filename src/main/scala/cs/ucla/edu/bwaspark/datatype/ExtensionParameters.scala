@@ -20,6 +20,14 @@ package cs.ucla.edu.bwaspark.datatype
 
 import cs.ucla.edu.avro.fastq._
 
+import org.apache.avro.io._
+import org.apache.avro.specific.SpecificDatumReader
+import org.apache.avro.specific.SpecificDatumWriter
+
+import java.io.ObjectInputStream
+import java.io.ObjectOutputStream
+import java.io.ObjectStreamException
+
 class ExtParam() {
 	var leftQs: Array[Byte] = _
 	var leftQlen: Int = -1
@@ -109,9 +117,31 @@ class ExtRet() {
 	}
 }
 
-@serializable
-class ExtMetadata(chainFiltered : MemChainType, end0 : Boolean, seq : FASTQRecord) {
+class ExtMetadata(var chainFiltered : MemChainType, var end0 : Boolean,
+    var seq : FASTQRecord) extends Serializable {
   def getChainFiltered() : MemChainType = { chainFiltered }
   def getEnd0() : Boolean = { end0 }
   def getSeq() : FASTQRecord = { seq }
+
+  private def writeObject(out: ObjectOutputStream) {
+    out.writeObject(chainFiltered)
+    out.writeBoolean(end0)
+
+    val writer = new SpecificDatumWriter[FASTQRecord](classOf[FASTQRecord])
+    val encoder = EncoderFactory.get.binaryEncoder(out, null)
+    writer.write(seq, encoder)
+    encoder.flush()
+  }
+
+  private def readObject(in: ObjectInputStream) {
+    chainFiltered = in.readObject.asInstanceOf[MemChainType]
+    end0 = in.readBoolean
+
+    val reader = new SpecificDatumReader[FASTQRecord](classOf[FASTQRecord])
+    val decoder = DecoderFactory.get.binaryDecoder(in, null)
+    seq = reader.read(null, decoder).asInstanceOf[FASTQRecord]
+  }
+
+  private def readObjectNoData() {
+  }
 }

@@ -54,6 +54,7 @@ import java.io.FileReader
 import java.io.BufferedReader
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.ArrayList
 
 import scala.concurrent._
 import ExecutionContext.Implicits.global
@@ -308,7 +309,7 @@ object FastMap {
           }
 
           val zipped = pairEndFASTQRDD.zipWithIndex
-          val wrapped = CLWrapper.cl(zipped)
+          val wrapped = CLWrapper.cl(zipped, false)
           val flat : RDD[Tuple2[ExtRet, Option[ExtMetadata]]] =
                 wrapped.mapPartitionsAsync(it2ArrayIt_W1)
           val byPartition = flat.map(tuple => (tuple._1.partitionId, (tuple._1, tuple._2.get)))
@@ -328,8 +329,8 @@ object FastMap {
                 pairEndReadArray = new Array[PairEndReadType](numOfReads)
                 for (i <- 0 until numOfReads) {
                   pairEndReadArray(i) = new PairEndReadType
-                  pairEndReadArray(i).regs0 = new Array[MemAlnRegType](numOfReads)
-                  pairEndReadArray(i).regs1 = new Array[MemAlnRegType](numOfReads)
+                  pairEndReadArray(i).regs0 = new ArrayList[MemAlnRegType](numOfReads)
+                  pairEndReadArray(i).regs1 = new ArrayList[MemAlnRegType](numOfReads)
                 }
               }
 
@@ -346,24 +347,20 @@ object FastMap {
 
                 var index : Int = 0
                 if (metadata.getEnd0) {
-                  while (pairEndReadArray(tmpIdx).regs0(index) == null) {
-                    index += 1
-                  }
-                  pairEndReadArray(tmpIdx).regs0(index) = reg
+                  pairEndReadArray(tmpIdx).regs0.add(reg)
                   pairEndReadArray(tmpIdx).seq0 = metadata.getSeq
                 } else {
-                  while (pairEndReadArray(tmpIdx).regs1(index) == null) {
-                    index += 1
-                  }
-                  pairEndReadArray(tmpIdx).regs1(index) = reg
+                  pairEndReadArray(tmpIdx).regs1.add(reg)
                   pairEndReadArray(tmpIdx).seq1 = metadata.getSeq
                 }
               }
             }
 
             for (i <- 0 until numOfReads) {
-              pairEndReadArray(i).regs0 = pairEndReadArray(i).regs0.filter(r => (r != null))
-              pairEndReadArray(i).regs1 = pairEndReadArray(i).regs1.filter(r => (r != null))
+
+              // Remove all null entries
+              while (pairEndReadArray(i).regs0.remove(null)) { }
+              while (pairEndReadArray(i).regs1.remove(null)) { }
 
               pairEndReadArray(i).regs0 = memSortAndDedup(
                       pairEndReadArray(i).regs0,
@@ -684,7 +681,9 @@ object FastMap {
       println("@Worker1")
       val reads = fastqRDD.map( seq => bwaMemWorker1(bwaMemOptGlobal.value, bwaIdxGlobal.value.bwt, bwaIdxGlobal.value.bns, bwaIdxGlobal.value.pac, null, seq) )
       println("@Worker2")
-      val c = reads.map( r => singleEndBwaMemWorker2(bwaMemOptGlobal.value, r.regs, bwaIdxGlobal.value.bns, bwaIdxGlobal.value.pac, r.seq, 0, samHeader) ).count
+      val c = reads.map( r => singleEndBwaMemWorker2(bwaMemOptGlobal.value,
+                  r.regs, bwaIdxGlobal.value.bns, bwaIdxGlobal.value.pac, r.seq,
+                  0, samHeader) ).count
       println("Count: " + c)
     }
     // output SAM file

@@ -18,6 +18,8 @@
 
 package cs.ucla.edu.bwaspark.worker1
 
+import java.util.ArrayList
+
 import cs.ucla.edu.bwaspark.datatype._
 import scala.collection.mutable.MutableList
 import java.util.TreeSet
@@ -78,14 +80,14 @@ object BWAMemWorker1 {
 
       //third step: for each chain, from chain to aligns
       var regArray = new MemAlnRegArrayType
-      regArray.regs = new Array[MemAlnRegType](totalSeedNum)
+      regArray.regs = new ArrayList[MemAlnRegType](totalSeedNum)
 
       for (i <- 0 until chainsFiltered.length) {
         memChainToAln(opt, bns.l_pac, pac, seq.getSeqLength, read, chainsFiltered(i), regArray)
       }
 
-      regArray.regs = regArray.regs.filter(r => (r != null))
-      assert(regArray.curLength == regArray.regs.length, "[Error] After filtering array elements")
+      while (regArray.regs.remove(null)) { }
+      assert(regArray.curLength == regArray.regs.size, "[Error] After filtering array elements")
 
       //last step: sorting and deduplication
       regArray.regs = memSortAndDedup(regArray.regs, opt.maskLevelRedun)

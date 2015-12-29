@@ -18,8 +18,10 @@
 
 package cs.ucla.edu.bwaspark.datatype
 
+import java.util.ArrayList
+
 class MemAlnRegArrayType {
   var curLength: Int = 0
-  var regs: Array[MemAlnRegType] = _
+  var regs: ArrayList[MemAlnRegType] = _
 }
 

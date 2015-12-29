@@ -29,10 +29,11 @@ import cs.ucla.edu.avro.fastq._
 import java.io.ObjectInputStream
 import java.io.ObjectOutputStream
 import java.io.ObjectStreamException
+import java.util.ArrayList
 
 class ReadType extends Serializable {
   var seq: FASTQRecord = _
-  var regs: Array[MemAlnRegType] = _
+  var regs: ArrayList[MemAlnRegType] = _
 
   private def writeObject(out: ObjectOutputStream) {
     out.writeObject(regs)
@@ -43,7 +44,7 @@ class ReadType extends Serializable {
   }
 
   private def readObject(in: ObjectInputStream) {
-    regs = in.readObject.asInstanceOf[Array[MemAlnRegType]]
+    regs = in.readObject.asInstanceOf[ArrayList[MemAlnRegType]]
     val reader = new SpecificDatumReader[FASTQRecord](classOf[FASTQRecord]);
     val decoder = DecoderFactory.get.binaryDecoder(in, null);
     seq = reader.read(null, decoder).asInstanceOf[FASTQRecord]

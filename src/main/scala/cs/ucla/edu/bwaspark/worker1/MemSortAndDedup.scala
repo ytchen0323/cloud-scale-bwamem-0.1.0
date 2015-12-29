@@ -20,6 +20,10 @@ package cs.ucla.edu.bwaspark.worker1
 
 import scala.util.control.Breaks._
 
+import java.util.ArrayList
+import java.util.Collections
+import java.util.Comparator
+
 import cs.ucla.edu.bwaspark.datatype._
 
 object MemSortAndDedup {
@@ -30,46 +34,74 @@ object MemSortAndDedup {
     *  @param regArray alignment registers, which are the output of chain to alignment (after memChainToAln() is applied)
     *  @param maskLevelRedun mask level of redundant alignment registers (from MemOptType object)
     */
-  def memSortAndDedup(inRegs: Array[MemAlnRegType], maskLevelRedun: Float):
-        Array[MemAlnRegType] = {
+  def memSortAndDedup(regs: ArrayList[MemAlnRegType], maskLevelRedun: Float):
+        ArrayList[MemAlnRegType] = {
     var count : Int = 0
-    while (count < inRegs.length && inRegs(count) != null) {
+    while (count < regs.size && regs.get(count) != null) {
       count += 1
     }
 
     if (count <= 1) {
-      inRegs
+      regs
     } else {
-      var regs = inRegs.sortBy(r => (r.rEnd, r.rBeg))
+      val comparator = new Comparator[MemAlnRegType] {
+        override def compare(o1 : MemAlnRegType, o2 : MemAlnRegType) : Int = {
+          if (o1.score > o2.score) {
+            -1
+          } else if (o1.score > o2.score) {
+            1
+          } else {
+            if (o1.rBeg < o2.rBeg) {
+              -1
+            } else if (o1.rBeg > o2.rBeg) {
+              1
+            } else {
+              if (o1.qBeg < o2.qBeg) {
+                -1
+              } else if (o1.qBeg > o2.qBeg) {
+                1
+              } else {
+                0
+              }
+            }
+          }
+        }
+
+        override def equals(obj : Any) : Boolean = {
+          false
+        }
+      }
+
+      Collections.sort(regs, comparator)
 
       var i = 1
-      while (i < regs.length) {
-        if(regs(i).rBeg < regs(i-1).rEnd) {
+      while (i < regs.size) {
+        if(regs.get(i).rBeg < regs.get(i-1).rEnd) {
           var j = i - 1
           var isBreak = false
-          while(j >= 0 && regs(i).rBeg < regs(j).rEnd && !isBreak) {
+          while(j >= 0 && regs.get(i).rBeg < regs.get(j).rEnd && !isBreak) {
             // a[j] has been excluded
-            if(regs(j).qEnd != regs(j).qBeg) { 
+            if(regs.get(j).qEnd != regs.get(j).qBeg) { 
               var oq = 0
               var mr: Long = 0
               var mq = 0
-              var or = regs(j).rEnd - regs(i).rBeg // overlap length on the reference
+              var or = regs.get(j).rEnd - regs.get(i).rBeg // overlap length on the reference
               // overlap length on the query
-              if(regs(j).qBeg < regs(i).qBeg) oq = regs(j).qEnd - regs(i).qBeg
-              else oq = regs(i).qEnd - regs(j).qBeg
+              if(regs.get(j).qBeg < regs.get(i).qBeg) oq = regs.get(j).qEnd - regs.get(i).qBeg
+              else oq = regs.get(i).qEnd - regs.get(j).qBeg
               // min ref len in alignment
-              if(regs(j).rEnd - regs(j).rBeg < regs(i).rEnd - regs(i).rBeg) mr = regs(j).rEnd - regs(j).rBeg
-              else mr = regs(i).rEnd - regs(i).rBeg
+              if(regs.get(j).rEnd - regs.get(j).rBeg < regs.get(i).rEnd - regs.get(i).rBeg) mr = regs.get(j).rEnd - regs.get(j).rBeg
+              else mr = regs.get(i).rEnd - regs.get(i).rBeg
               // min qry len in alignment
-              if(regs(j).qEnd - regs(j).qBeg < regs(i).qEnd - regs(i).qBeg) mq = regs(j).qEnd - regs(j).qBeg
-              else mq = regs(i).qEnd - regs(i).qBeg
+              if(regs.get(j).qEnd - regs.get(j).qBeg < regs.get(i).qEnd - regs.get(i).qBeg) mq = regs.get(j).qEnd - regs.get(j).qBeg
+              else mq = regs.get(i).qEnd - regs.get(i).qBeg
               // one of the hits is redundant
               if(or > maskLevelRedun * mr && oq > maskLevelRedun * mq) {
-                if(regs(i).score < regs(j).score) {
-                  regs(i).qEnd = regs(i).qBeg
+                if(regs.get(i).score < regs.get(j).score) {
+                  regs.get(i).qEnd = regs.get(i).qBeg
                   isBreak = true
                 } else {
-                  regs(j).qEnd = regs(j).qBeg
+                  regs.get(j).qEnd = regs.get(j).qBeg
                 }
               }
             }             
@@ -83,21 +115,29 @@ object MemSortAndDedup {
       }
 
       // exclude identical hits
-      regs = regs.filter(r => (r.qEnd > r.qBeg))
+      val filtered1 = new ArrayList[MemAlnRegType](regs.size)
+      for (i <- 0 until regs.size) {
+        val r = regs.get(i)
+        if (r.qEnd > r.qBeg) filtered1.add(r)
+      }
 
-      regs = regs.sortBy(r => (- r.score, r.rBeg, r.qBeg))
-      
+      Collections.sort(filtered1, comparator)
+
       i = 1
-      while(i < regs.length) {
-        if(regs(i).score == regs(i-1).score && regs(i).rBeg == regs(i-1).rBeg &&
-            regs(i).qBeg == regs(i-1).qBeg)
-          regs(i).qEnd = regs(i).qBeg
+      while(i < filtered1.size) {
+        if(filtered1.get(i).score == filtered1.get(i-1).score && filtered1.get(i).rBeg == filtered1.get(i-1).rBeg &&
+            filtered1.get(i).qBeg == filtered1.get(i-1).qBeg)
+          filtered1.get(i).qEnd = filtered1.get(i).qBeg
         i += 1
       }        
 
-      regs = regs.filter(r => (r.qEnd > r.qBeg))
+      val final_regs = new ArrayList[MemAlnRegType](filtered1.size)
+      for (i <- 0 until filtered1.size) {
+        val r = filtered1.get(i)
+        if (r.qEnd > r.qBeg) final_regs.add(r)
+      }
 
-      regs
+      final_regs
     }
   }
 }

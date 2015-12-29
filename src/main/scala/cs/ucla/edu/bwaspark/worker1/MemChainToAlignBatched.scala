@@ -611,7 +611,7 @@ object MemChainToAlignBatched {
 
         outputStream.spawn(() =>
                 extension(fpgaExtTasks(i), partitionId, numOfReads,
-                regFlags(tmpIdx), regArrays(tmpIdx).regs.length,
+                regFlags(tmpIdx), regArrays(tmpIdx).regs.size,
                 seedArray(tmpIdx).rBeg, seedArray(tmpIdx).qBeg,
                 seedArray(tmpIdx).len), Some(metadata))
 
@@ -729,17 +729,17 @@ object MemChainToAlignBatched {
     var maxGap: Int = -1
     var minDist: Int = -1
     var w: Int = -1
-    var breakIdx: Int = regArray.regs.length
+    var breakIdx: Int = regArray.regs.size
     var i = 0
     var isBreak = false
 
     while(i < regArray.curLength && !isBreak) {
         
-      if(seed.rBeg >= regArray.regs(i).rBeg && (seed.rBeg + seed.len) <= regArray.regs(i).rEnd && 
-        seed.qBeg >= regArray.regs(i).qBeg && (seed.qBeg + seed.len) <= regArray.regs(i).qEnd) {
+      if(seed.rBeg >= regArray.regs.get(i).rBeg && (seed.rBeg + seed.len) <= regArray.regs.get(i).rEnd && 
+        seed.qBeg >= regArray.regs.get(i).qBeg && (seed.qBeg + seed.len) <= regArray.regs.get(i).qEnd) {
         // qDist: distance ahead of the seed on query; rDist: on reference
-        qDist = seed.qBeg - regArray.regs(i).qBeg
-        rDist = seed.rBeg - regArray.regs(i).rBeg
+        qDist = seed.qBeg - regArray.regs.get(i).qBeg
+        rDist = seed.rBeg - regArray.regs.get(i).rBeg
 
         if(qDist < rDist) minDist = qDist 
         else minDist = rDist.toInt
@@ -759,8 +759,8 @@ object MemChainToAlignBatched {
 
         if(!isBreak) {
           // the codes below are similar to the previous four lines, but this time we look at the region behind
-          qDist = regArray.regs(i).qEnd - (seed.qBeg + seed.len)
-          rDist = regArray.regs(i).rEnd - (seed.rBeg + seed.len)
+          qDist = regArray.regs.get(i).qEnd - (seed.qBeg + seed.len)
+          rDist = regArray.regs.get(i).rEnd - (seed.rBeg + seed.len)
           
           if(qDist < rDist) minDist = qDist
           else minDist = rDist.toInt

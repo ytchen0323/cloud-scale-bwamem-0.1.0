@@ -20,6 +20,8 @@ package cs.ucla.edu.bwaspark.worker1
 
 import org.apache.spark.rdd.cl.AsyncOutputStream
 
+import java.util.ArrayList
+
 import cs.ucla.edu.bwaspark.datatype._
 import scala.collection.mutable.MutableList
 import java.util.TreeSet
@@ -108,7 +110,7 @@ object BWAMemWorker1Batched {
                   println("The number of reads in this pack is: " + numOfReads)
                 }
                 regArrays(i) = new MemAlnRegArrayType
-                regArrays(i).regs = new Array[MemAlnRegType](numOfSeedsArray(i))
+                regArrays(i).regs = new ArrayList[MemAlnRegType](numOfSeedsArray(i))
             }
             i = i+1
         }

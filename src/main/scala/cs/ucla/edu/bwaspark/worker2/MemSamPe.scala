@@ -20,6 +20,8 @@ package cs.ucla.edu.bwaspark.worker2
 
 import org.apache.commons.math3.special.Erf.erfc
 
+import java.util.ArrayList
+
 import scala.math.sqrt
 import scala.math.log
 import scala.math.abs
@@ -74,18 +76,18 @@ object MemSamPe {
     *  @param regs the alignment array  
     *  @return the sub score
     */
-  private def calSub(opt: MemOptType, regs: Array[MemAlnRegType]) : Int = {
+  private def calSub(opt: MemOptType, regs: ArrayList[MemAlnRegType]) : Int = {
     var j = 1
     var isBreak = false
-    while(j < regs.length && !isBreak) { // choose unique alignment
-      var bMax = regs(0).qBeg
-      var eMin = regs(0).qEnd
+    while(j < regs.size && !isBreak) { // choose unique alignment
+      var bMax = regs.get(0).qBeg
+      var eMin = regs.get(0).qEnd
 
-      if(regs(j).qBeg > regs(0).qBeg) bMax = regs(j).qBeg
-      if(regs(j).qEnd < regs(0).qEnd) eMin = regs(j).qEnd
+      if(regs.get(j).qBeg > regs.get(0).qBeg) bMax = regs.get(j).qBeg
+      if(regs.get(j).qEnd < regs.get(0).qEnd) eMin = regs.get(j).qEnd
       if(eMin > bMax) { // have overlap
-        var minL = regs(0).qEnd - regs(0).qBeg
-        if(regs(j).qEnd - regs(j).qBeg < minL) minL = regs(j).qEnd - regs(j).qBeg
+        var minL = regs.get(0).qEnd - regs.get(0).qBeg
+        if(regs.get(j).qEnd - regs.get(j).qBeg < minL) minL = regs.get(j).qEnd - regs.get(j).qBeg
         if(eMin - bMax >= minL * opt.maskLevel) { 
           isBreak = true
           j -= 1
@@ -95,7 +97,7 @@ object MemSamPe {
       j += 1    
     }
 
-    if(j < regs.length) regs(j).score
+    if(j < regs.size) regs.get(j).score
     else opt.minSeedLen * opt.a
   }
 
@@ -131,24 +133,24 @@ object MemSamPe {
       r(1) = regArray(i<<1|1)
 
       if(r(0) != null && r(1) != null) {
-        if(calSub(opt, r(0).regs) <= MIN_RATIO * r(0).regs(0).score) {
-          if(calSub(opt, r(1).regs) <= MIN_RATIO * r(1).regs(0).score) {
+        if(calSub(opt, r(0).regs) <= MIN_RATIO * r(0).regs.get(0).score) {
+          if(calSub(opt, r(1).regs) <= MIN_RATIO * r(1).regs.get(0).score) {
             // Inline mem_infer_dir
             var r1: Boolean = false
             var r2: Boolean = false
-            if(r(0).regs(0).rBeg >= pacLen) r1 = true
-            if(r(1).regs(0).rBeg >= pacLen) r2 = true
+            if(r(0).regs.get(0).rBeg >= pacLen) r1 = true
+            if(r(1).regs.get(0).rBeg >= pacLen) r2 = true
 
-            var rBegLarger = r(1).regs(0).rBeg
+            var rBegLarger = r(1).regs.get(0).rBeg
             // rBegLarger is the coordinate of read 2 on the read 1 strand
-            if(r1 != r2) rBegLarger = (pacLen << 1) - 1 - r(1).regs(0).rBeg 
-            var dist: Int = (r(0).regs(0).rBeg - rBegLarger).toInt
-            if(rBegLarger > r(0).regs(0).rBeg) dist = (rBegLarger - r(0).regs(0).rBeg).toInt
+            if(r1 != r2) rBegLarger = (pacLen << 1) - 1 - r(1).regs.get(0).rBeg 
+            var dist: Int = (r(0).regs.get(0).rBeg - rBegLarger).toInt
+            if(rBegLarger > r(0).regs.get(0).rBeg) dist = (rBegLarger - r(0).regs.get(0).rBeg).toInt
             
             var cond1 = 1
             if(r1 == r2) cond1 = 0
             var cond2 = 3
-            if(rBegLarger > r(0).regs(0).rBeg) cond2 = 0
+            if(rBegLarger > r(0).regs.get(0).rBeg) cond2 = 0
             
             dir = cond1 ^ cond2
             if(dist > 0 && dist <= opt.maxIns) iSize(dir) = iSize(dir) :+ dist
@@ -259,8 +261,10 @@ object MemSamPe {
     *  @param mateRegs the alignments of the mate sequence
     *  @return (the number of added new alignments from mate-SW, alignment array)
     */
-  private def memMateSw(opt: MemOptType, pacLen: Long, pac: Array[Byte], pes: Array[MemPeStat], reg: MemAlnRegType, 
-                        mateSeqLen: Int, mateSeq: Array[Byte], mateRegs: Array[MemAlnRegType]): (Int, Array[MemAlnRegType]) = {
+  private def memMateSw(opt: MemOptType, pacLen: Long, pac: Array[Byte],
+          pes: Array[MemPeStat], reg: MemAlnRegType, mateSeqLen: Int,
+          mateSeq: Array[Byte], mateRegs: ArrayList[MemAlnRegType]):
+          (Int, ArrayList[MemAlnRegType]) = {
     var mateRegsUpdated: Vector[MemAlnRegType] = scala.collection.immutable.Vector.empty
     var skip: Array[Int] = new Array[Int](4)
     var n = 0
@@ -280,11 +284,11 @@ object MemSamPe {
         var r1: Boolean = false
         var r2: Boolean = false
         if(reg.rBeg >= pacLen) r1 = true
-        if(mateRegs(i).rBeg >= pacLen) r2 = true
+        if(mateRegs.get(i).rBeg >= pacLen) r2 = true
 
-        var rBegLarger = mateRegs(i).rBeg
+        var rBegLarger = mateRegs.get(i).rBeg
         // rBegLarger is the coordinate of read 2 on the read 1 strand
-        if(r1 != r2) rBegLarger = (pacLen << 1) - 1 - mateRegs(i).rBeg
+        if(r1 != r2) rBegLarger = (pacLen << 1) - 1 - mateRegs.get(i).rBeg
         var dist: Int = (reg.rBeg - rBegLarger).toInt
         if(rBegLarger > reg.rBeg) dist = (rBegLarger - reg.rBeg).toInt
 
@@ -306,7 +310,7 @@ object MemSamPe {
     if(mateRegs != null) {
       i = 0
       while(i < mateRegs.size) {
-        mateRegsUpdated = mateRegsUpdated :+ mateRegs(i)
+        mateRegsUpdated = mateRegsUpdated :+ mateRegs.get(i)
         i += 1
       }
     }
@@ -386,24 +390,6 @@ object MemSamPe {
             
             // move b s.t. ma is sorted
             mateRegsUpdated = mateRegsUpdated :+ alnTmp
-
-            // original sorting in c codes
-            /*
-            i = 0
-            var isBreak = false
-            while(i < mateRegs.size && isBreak) {
-              if(mateRegs(i).score < alnTmp.score) isBreak = true
-              else i += 1
-            }
-            val breakIdx = i
-
-            i = mateRegs.size - 1
-            while(i > breakIdx) {
-              mateRegs(i) = mateRegs(i - 1)
-              i -= 1
-            }
-            mateRegs(breakIdx) = alnTmp
-            */
           }
           
           n += 1
@@ -412,7 +398,10 @@ object MemSamPe {
         if(n > 0) {
           // Sort here!
           mateRegsUpdated = mateRegsUpdated.sortBy(seq => (seq.score))
-          regArray.regs = mateRegsUpdated.toArray
+
+          regArray.regs = new ArrayList[MemAlnRegType](mateRegsUpdated.size)
+          for (m <- mateRegsUpdated) regArray.regs.add(m)
+
           regArray.curLength = mateRegsUpdated.size
           regArray.regs = memSortAndDedup(regArray.regs, opt.maskLevelRedun)
         }
@@ -457,7 +446,9 @@ object MemSamPe {
     *  @param id the current read id
     *  @return (return value, subo value, n_sub, z[2])
     */
-  private def memPair(opt: MemOptType, pacLen: Long, pes: Array[MemPeStat], alnRegVec: Array[Array[MemAlnRegType]], id: Long): (Int, Int, Int, Array[Int]) = {
+  private def memPair(opt: MemOptType, pacLen: Long, pes: Array[MemPeStat],
+          alnRegVec: Array[ArrayList[MemAlnRegType]], id: Long):
+          (Int, Int, Int, Array[Int]) = {
     var keyVec: Vector[PairLong] = scala.collection.immutable.Vector.empty
     var keyUVec: Vector[PairLong] = scala.collection.immutable.Vector.empty
     var y: Array[Int] = new Array[Int](4)
@@ -473,10 +464,10 @@ object MemSamPe {
       while(i < alnRegVec(r).size) {
         var key: PairLong = new PairLong
 
-        key.x = alnRegVec(r)(i).rBeg
-        if(alnRegVec(r)(i).rBeg >= pacLen) key.x = (pacLen << 1) - 1 - alnRegVec(r)(i).rBeg   // forward position
-        if(alnRegVec(r)(i).rBeg >= pacLen) key.y = (alnRegVec(r)(i).score.toLong << 32) | (i << 2) | 2 | r
-        else key.y = (alnRegVec(r)(i).score.toLong << 32) | (i << 2) | 0 | r
+        key.x = alnRegVec(r).get(i).rBeg
+        if(alnRegVec(r).get(i).rBeg >= pacLen) key.x = (pacLen << 1) - 1 - alnRegVec(r).get(i).rBeg   // forward position
+        if(alnRegVec(r).get(i).rBeg >= pacLen) key.y = (alnRegVec(r).get(i).score.toLong << 32) | (i << 2) | 2 | r
+        else key.y = (alnRegVec(r).get(i).score.toLong << 32) | (i << 2) | 0 | r
 
         keyVec = keyVec :+ key
         i += 1
@@ -585,7 +576,7 @@ object MemSamPe {
     *  @return the number of added new alignments from mate-SW
     */
   def memSamPe(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte], pes: Array[MemPeStat], id: Long, 
-               seqsIn: PairEndFASTQRecord, alnRegVec: Array[Array[MemAlnRegType]], samHeader: SAMHeader): Int = {
+               seqsIn: PairEndFASTQRecord, alnRegVec: Array[ArrayList[MemAlnRegType]], samHeader: SAMHeader): Int = {
     var n: Int = 0
     var z: Array[Int] = new Array[Int](2)
     var subo: Int = 0
@@ -613,8 +604,9 @@ object MemSamPe {
         if(alnRegVec(i) != null) {
           var j = 0
           while(j < alnRegVec(i).size) {
-            if(alnRegVec(i)(j).score >= alnRegVec(i)(0).score - opt.penUnpaired)
-              alnRegTmpVec(i) = alnRegTmpVec(i) :+ alnRegVec(i)(j)
+            if (alnRegVec(i).get(j).score >= alnRegVec(i).get(0).score - opt.penUnpaired) {
+              alnRegTmpVec(i) = alnRegTmpVec(i) :+ alnRegVec(i).get(j)
+            }
             j += 1
           }
         }
@@ -628,7 +620,8 @@ object MemSamPe {
         while(j < alnRegTmpVec(i).size && j < opt.maxMatesw) {
           var iBar = 0
           if(i == 0) iBar = 1
-          val ret = memMateSw(opt, bns.l_pac, pac, pes, alnRegTmpVec(i)(j), seqs(iBar).seqLength, seqsTrans(iBar), alnRegVec(iBar)) 
+          val ret = memMateSw(opt, bns.l_pac, pac, pes, alnRegTmpVec(i)(j),
+                  seqs(iBar).seqLength, seqsTrans(iBar), alnRegVec(iBar)) 
           n += ret._1
           alnRegVec(iBar) = ret._2
           j += 1
@@ -666,7 +659,7 @@ object MemSamPe {
             var j = 1
             var isBreak = false
             while(j < alnRegVec(i).size && !isBreak) {
-              if(alnRegVec(i)(j).secondary < 0 && alnRegVec(i)(j).score >= opt.T) 
+              if(alnRegVec(i).get(j).secondary < 0 && alnRegVec(i).get(j).score >= opt.T) 
                 isBreak = true
               else 
                 j += 1
@@ -680,7 +673,7 @@ object MemSamPe {
 
           if(!isMulti(0) && !isMulti(1)) {  
             // compute mapQ for the best SE hit
-            scoreUn = alnRegVec(0)(0).score + alnRegVec(1)(0).score - opt.penUnpaired
+            scoreUn = alnRegVec(0).get(0).score + alnRegVec(1).get(0).score - opt.penUnpaired
             if(subo < scoreUn) subo = scoreUn
             // Inline raw_mapq(ret - subo, opt.a)
             // #define raw_mapq(diff, a) ((int)(6.02 * (diff) / (a) + .499))
@@ -693,13 +686,13 @@ object MemSamPe {
             // the following assumes no split hits
             if(ret > scoreUn) { // paired alignment is preferred
               var tmpRegs = new Array[MemAlnRegType](2)
-              tmpRegs(0) = alnRegVec(0)(z(0))
-              tmpRegs(1) = alnRegVec(1)(z(1))
+              tmpRegs(0) = alnRegVec(0).get(z(0))
+              tmpRegs(1) = alnRegVec(1).get(z(1))
 
               var i = 0
               while(i < 2) {
                 if(tmpRegs(i).secondary >= 0) {
-                  tmpRegs(i).sub = alnRegVec(i)(tmpRegs(i).secondary).score
+                  tmpRegs(i).sub = alnRegVec(i).get(tmpRegs(i).secondary).score
                   tmpRegs(i).secondary = -1
                 }
 
@@ -730,15 +723,15 @@ object MemSamPe {
             else { // the unpaired alignment is preferred
               z(0) = 0
               z(1) = 0
-              qSe(0) = memApproxMapqSe(opt, alnRegVec(0)(0))
-              qSe(1) = memApproxMapqSe(opt, alnRegVec(1)(0))
+              qSe(0) = memApproxMapqSe(opt, alnRegVec(0).get(0))
+              qSe(1) = memApproxMapqSe(opt, alnRegVec(1).get(0))
             }
             
             // write SAM
-            val aln0 = memRegToAln(opt, bns, pac, seqs(0).seqLength, seqsTrans(0), alnRegVec(0)(z(0))) 
+            val aln0 = memRegToAln(opt, bns, pac, seqs(0).seqLength, seqsTrans(0), alnRegVec(0).get(z(0))) 
             aln0.mapq = qSe(0).toShort
             aln0.flag |= 0x40 | extraFlag
-            val aln1 = memRegToAln(opt, bns, pac, seqs(1).seqLength, seqsTrans(1), alnRegVec(1)(z(1)))
+            val aln1 = memRegToAln(opt, bns, pac, seqs(1).seqLength, seqsTrans(1), alnRegVec(1).get(z(1)))
             aln1.mapq = qSe(1).toShort
             aln1.flag |= 0x80 | extraFlag
 
@@ -777,7 +770,7 @@ object MemSamPe {
 
       var i = 0
       while(i < 2) {
-        if(alnRegVec(i) != null && alnRegVec(i).size > 0 && alnRegVec(i)(0).score >= opt.T) alnVec(i) = memRegToAln(opt, bns, pac, seqs(i).seqLength, seqsTrans(i), alnRegVec(i)(0)) 
+        if(alnRegVec(i) != null && alnRegVec(i).size > 0 && alnRegVec(i).get(0).score >= opt.T) alnVec(i) = memRegToAln(opt, bns, pac, seqs(i).seqLength, seqsTrans(i), alnRegVec(i).get(0)) 
         else alnVec(i) = memRegToAln(opt, bns, pac, seqs(i).seqLength, seqsTrans(i), null) 
 
         i += 1
@@ -788,19 +781,19 @@ object MemSamPe {
         // Inline mem_infer_dir
         var r1: Boolean = false
         var r2: Boolean = false
-        if(alnRegVec(0)(0).rBeg >= bns.l_pac) r1 = true
-        if(alnRegVec(1)(0).rBeg >= bns.l_pac) r2 = true
+        if(alnRegVec(0).get(0).rBeg >= bns.l_pac) r1 = true
+        if(alnRegVec(1).get(0).rBeg >= bns.l_pac) r2 = true
 
-        var rBegLarger = alnRegVec(1)(0).rBeg
+        var rBegLarger = alnRegVec(1).get(0).rBeg
         // rBegLarger is the coordinate of read 2 on the read 1 strand
-        if(r1 != r2) rBegLarger = (bns.l_pac << 1) - 1 - alnRegVec(1)(0).rBeg
-        var dist: Int = (alnRegVec(0)(0).rBeg - rBegLarger).toInt
-        if(rBegLarger > alnRegVec(0)(0).rBeg) dist = (rBegLarger - alnRegVec(0)(0).rBeg).toInt
+        if(r1 != r2) rBegLarger = (bns.l_pac << 1) - 1 - alnRegVec(1).get(0).rBeg
+        var dist: Int = (alnRegVec(0).get(0).rBeg - rBegLarger).toInt
+        if(rBegLarger > alnRegVec(0).get(0).rBeg) dist = (rBegLarger - alnRegVec(0).get(0).rBeg).toInt
 
         var cond1 = 1
         if(r1 == r2) cond1 = 0
         var cond2 = 3
-        if(rBegLarger > alnRegVec(0)(0).rBeg) cond2 = 0
+        if(rBegLarger > alnRegVec(0).get(0).rBeg) cond2 = 0
 
         var d = cond1 ^ cond2
      
@@ -908,31 +901,31 @@ object MemSamPe {
     *  @return the prepared data for the driver to compute pair-end statistics
     */
   def memPeStatPrep(opt: MemOptType, pacLen: Long, pairEndRead: PairEndReadType): PeStatPrepType = {
-    var r: Array[Array[MemAlnRegType]] = new Array[Array[MemAlnRegType]](2)
+    var r: Array[ArrayList[MemAlnRegType]] = new Array[ArrayList[MemAlnRegType]](2)
     var peStatPrep = new PeStatPrepType
     var is: Long = 0
     r(0) = pairEndRead.regs0
     r(1) = pairEndRead.regs1
 
     if(r(0) != null && r(1) != null) {
-      if(calSub(opt, r(0)) <= MIN_RATIO * r(0)(0).score) {
-        if(calSub(opt, r(1)) <= MIN_RATIO * r(1)(0).score) {
+      if(calSub(opt, r(0)) <= MIN_RATIO * r(0).get(0).score) {
+        if(calSub(opt, r(1)) <= MIN_RATIO * r(1).get(0).score) {
           // Inline mem_infer_dir
           var r1: Boolean = false
           var r2: Boolean = false
-          if(r(0)(0).rBeg >= pacLen) r1 = true
-          if(r(1)(0).rBeg >= pacLen) r2 = true
+          if(r(0).get(0).rBeg >= pacLen) r1 = true
+          if(r(1).get(0).rBeg >= pacLen) r2 = true
 
-          var rBegLarger = r(1)(0).rBeg
+          var rBegLarger = r(1).get(0).rBeg
           // rBegLarger is the coordinate of read 2 on the read 1 strand
-          if(r1 != r2) rBegLarger = (pacLen << 1) - 1 - r(1)(0).rBeg 
-          peStatPrep.dist = (r(0)(0).rBeg - rBegLarger).toInt
-          if(rBegLarger > r(0)(0).rBeg) peStatPrep.dist = (rBegLarger - r(0)(0).rBeg).toInt
+          if(r1 != r2) rBegLarger = (pacLen << 1) - 1 - r(1).get(0).rBeg 
+          peStatPrep.dist = (r(0).get(0).rBeg - rBegLarger).toInt
+          if(rBegLarger > r(0).get(0).rBeg) peStatPrep.dist = (rBegLarger - r(0).get(0).rBeg).toInt
             
           var cond1 = 1
           if(r1 == r2) cond1 = 0
           var cond2 = 3
-          if(rBegLarger > r(0)(0).rBeg) cond2 = 0
+          if(rBegLarger > r(0).get(0).rBeg) cond2 = 0
             
           peStatPrep.dir = cond1 ^ cond2
         }
@@ -1106,8 +1099,10 @@ object MemSamPe {
     *  @param refArray the reference segment array
     *  @return (the number of added new alignments from mate-SW, alignment array)
     */
-  private def memMateSwPreCompute(opt: MemOptType, pacLen: Long, pes: Array[MemPeStat], reg: MemAlnRegType, 
-                                  mateSeqLen: Int, mateSeq: Array[Byte], mateRegs: Array[MemAlnRegType], refArray: Array[RefType]): (Int, Array[MemAlnRegType]) = {
+  private def memMateSwPreCompute(opt: MemOptType, pacLen: Long,
+          pes: Array[MemPeStat], reg: MemAlnRegType, mateSeqLen: Int,
+          mateSeq: Array[Byte], mateRegs: ArrayList[MemAlnRegType],
+          refArray: Array[RefType]): (Int, ArrayList[MemAlnRegType]) = {
     var mateRegsUpdated: Vector[MemAlnRegType] = scala.collection.immutable.Vector.empty
     var skip: Array[Int] = new Array[Int](4)
     var n = 0
@@ -1127,11 +1122,11 @@ object MemSamPe {
         var r1: Boolean = false
         var r2: Boolean = false
         if(reg.rBeg >= pacLen) r1 = true
-        if(mateRegs(i).rBeg >= pacLen) r2 = true
+        if(mateRegs.get(i).rBeg >= pacLen) r2 = true
 
-        var rBegLarger = mateRegs(i).rBeg
+        var rBegLarger = mateRegs.get(i).rBeg
         // rBegLarger is the coordinate of read 2 on the read 1 strand
-        if(r1 != r2) rBegLarger = (pacLen << 1) - 1 - mateRegs(i).rBeg
+        if(r1 != r2) rBegLarger = (pacLen << 1) - 1 - mateRegs.get(i).rBeg
         var dist: Int = (reg.rBeg - rBegLarger).toInt
         if(rBegLarger > reg.rBeg) dist = (rBegLarger - reg.rBeg).toInt
 
@@ -1153,7 +1148,7 @@ object MemSamPe {
     if(mateRegs != null) {
       i = 0
       while(i < mateRegs.size) {
-        mateRegsUpdated = mateRegsUpdated :+ mateRegs(i)
+        mateRegsUpdated = mateRegsUpdated :+ mateRegs.get(i)
         i += 1
       }
     }
@@ -1220,7 +1215,8 @@ object MemSamPe {
           // Sort here!
           // May be more efficient by using insertion sort?
           mateRegsUpdated = mateRegsUpdated.sortBy(seq => (seq.score))
-          regArray.regs = mateRegsUpdated.toArray
+          regArray.regs = new ArrayList[MemAlnRegType](mateRegsUpdated.size)
+          for (v <- mateRegsUpdated) regArray.regs.add(v)
           regArray.curLength = mateRegsUpdated.size
           regArray.regs = memSortAndDedup(regArray.regs, opt.maskLevelRedun)
           
@@ -1251,7 +1247,7 @@ object MemSamPe {
     *  @return (Reference segment array, selected alignment vector)
     */
   private def memSamPeGroupPrepare(opt: MemOptType, bns: BNTSeqType,  pac: Array[Byte], pes: Array[MemPeStat], groupSize: Int,
-                                   alnRegVecPairs: Array[Array[Array[MemAlnRegType]]], seqsPairs: Array[Array[FASTQRecord]]): 
+                                   alnRegVecPairs: Array[Array[ArrayList[MemAlnRegType]]], seqsPairs: Array[Array[FASTQRecord]]): 
                                    (Array[Array[Array[Array[RefType]]]], Array[Array[Vector[MemAlnRegType]]]) = {
     var regRefArray: Array[Array[Array[Array[RefType]]]] = new Array[Array[Array[Array[RefType]]]](groupSize)
     var alnRegTmpVecPairs: Array[Array[Vector[MemAlnRegType]]] = new Array[Array[Vector[MemAlnRegType]]](groupSize)
@@ -1277,8 +1273,8 @@ object MemSamPe {
           if(alnRegVecPairs(k)(i) != null) {
             var j = 0
             while(j < alnRegVecPairs(k)(i).size) {
-              if(alnRegVecPairs(k)(i)(j).score >= alnRegVecPairs(k)(i)(0).score - opt.penUnpaired)
-                alnRegTmpVec(i) = alnRegTmpVec(i) :+ alnRegVecPairs(k)(i)(j)
+              if(alnRegVecPairs(k)(i).get(j).score >= alnRegVecPairs(k)(i).get(0).score - opt.penUnpaired)
+                alnRegTmpVec(i) = alnRegTmpVec(i) :+ alnRegVecPairs(k)(i).get(j)
               j += 1
             }
           }
@@ -1329,9 +1325,13 @@ object MemSamPe {
     *  @param alnRegTmpVecPairs the temporary alignments data packed in a paired vector
     *  @return the number of added new alignments from mate-SW
     */
-  private def memSamPeGroupMateSW(opt: MemOptType, pacLen: Long, pes: Array[MemPeStat], groupSize: Int, 
-                                  seqsPairs: Array[Array[FASTQRecord]], seqsTransPairs: Array[Array[Array[Byte]]], regRefArray: Array[Array[Array[Array[RefType]]]],
-                                  alnRegVecPairs: Array[Array[Array[MemAlnRegType]]], alnRegTmpVecPairs: Array[Array[Vector[MemAlnRegType]]]): Int = {
+  private def memSamPeGroupMateSW(opt: MemOptType, pacLen: Long,
+          pes: Array[MemPeStat], groupSize: Int,
+          seqsPairs: Array[Array[FASTQRecord]],
+          seqsTransPairs: Array[Array[Array[Byte]]],
+          regRefArray: Array[Array[Array[Array[RefType]]]],
+          alnRegVecPairs: Array[Array[ArrayList[MemAlnRegType]]],
+          alnRegTmpVecPairs: Array[Array[Vector[MemAlnRegType]]]): Int = {
     var k = 0
     var n = 0
 
@@ -1348,7 +1348,10 @@ object MemSamPe {
           while(j < alnRegTmpVecPairs(k)(i).size && j < opt.maxMatesw) {
             var iBar = 0
             if(i == 0) iBar = 1
-            val ret = memMateSwPreCompute(opt, pacLen, pes, alnRegTmpVecPairs(k)(i)(j), seqsPairs(k)(iBar).seqLength, seqsTransPairs(k)(iBar), alnRegVecPairs(k)(iBar), regRefArray(k)(i)(j)) 
+            val ret = memMateSwPreCompute(opt, pacLen, pes,
+                    alnRegTmpVecPairs(k)(i)(j), seqsPairs(k)(iBar).seqLength,
+                    seqsTransPairs(k)(iBar), alnRegVecPairs(k)(iBar),
+                    regRefArray(k)(i)(j)) 
             n += ret._1
             alnRegVecPairs(k)(iBar) = ret._2
             j += 1
@@ -1384,9 +1387,13 @@ object MemSamPe {
     *  @param samStringArray the output SAM string array
     *  @param samHeader the SAM header required to output SAM strings
     */
-  private def memSamPeGroupRest(opt: MemOptType, bns: BNTSeqType,  pac: Array[Byte], pes: Array[MemPeStat], groupSize: Int, id: Long,
-                                seqsPairs: Array[Array[FASTQRecord]], seqsTransPairs: Array[Array[Array[Byte]]], alnRegVecPairs: Array[Array[Array[MemAlnRegType]]],
-                                isSAMStrOutput: Boolean, samStringArray: Array[Array[String]], samHeader: SAMHeader) {
+  private def memSamPeGroupRest(opt: MemOptType, bns: BNTSeqType,
+          pac: Array[Byte], pes: Array[MemPeStat], groupSize: Int, id: Long,
+          seqsPairs: Array[Array[FASTQRecord]],
+          seqsTransPairs: Array[Array[Array[Byte]]],
+          alnRegVecPairs: Array[Array[ArrayList[MemAlnRegType]]],
+          isSAMStrOutput: Boolean, samStringArray: Array[Array[String]],
+          samHeader: SAMHeader) {
     var k = 0
     var sum = 0
     // Array index -
@@ -1400,7 +1407,7 @@ object MemSamPe {
       var numSub: Int = 0
       var extraFlag: Int = 1
       var seqsTrans: Array[Array[Byte]] = new Array[Array[Byte]](2)
-      var alnRegVec: Array[Array[MemAlnRegType]] = new Array[Array[MemAlnRegType]](2)
+      var alnRegVec: Array[ArrayList[MemAlnRegType]] = new Array[ArrayList[MemAlnRegType]](2)
       var seqs: Array[FASTQRecord] = new Array[FASTQRecord](2)
       var noPairingFlag: Boolean = false
 
@@ -1441,7 +1448,7 @@ object MemSamPe {
               var j = 1
               var isBreak = false
               while(j < alnRegVec(i).size && !isBreak) {
-                if(alnRegVec(i)(j).secondary < 0 && alnRegVec(i)(j).score >= opt.T) 
+                if(alnRegVec(i).get(j).secondary < 0 && alnRegVec(i).get(j).score >= opt.T) 
                   isBreak = true
                 else 
                   j += 1
@@ -1455,7 +1462,7 @@ object MemSamPe {
 
             if(!isMulti(0) && !isMulti(1)) {  
               // compute mapQ for the best SE hit
-              scoreUn = alnRegVec(0)(0).score + alnRegVec(1)(0).score - opt.penUnpaired
+              scoreUn = alnRegVec(0).get(0).score + alnRegVec(1).get(0).score - opt.penUnpaired
               if(subo < scoreUn) subo = scoreUn
               // Inline raw_mapq(ret - subo, opt.a)
               // #define raw_mapq(diff, a) ((int)(6.02 * (diff) / (a) + .499))
@@ -1468,13 +1475,13 @@ object MemSamPe {
               // the following assumes no split hits
               if(ret > scoreUn) { // paired alignment is preferred
                 var tmpRegs = new Array[MemAlnRegType](2)
-                tmpRegs(0) = alnRegVec(0)(z(0))
-                tmpRegs(1) = alnRegVec(1)(z(1))
+                tmpRegs(0) = alnRegVec(0).get(z(0))
+                tmpRegs(1) = alnRegVec(1).get(z(1))
 
                 var i = 0
                 while(i < 2) {
                   if(tmpRegs(i).secondary >= 0) {
-                    tmpRegs(i).sub = alnRegVec(i)(tmpRegs(i).secondary).score
+                    tmpRegs(i).sub = alnRegVec(i).get(tmpRegs(i).secondary).score
                     tmpRegs(i).secondary = -1
                   }
   
@@ -1505,15 +1512,15 @@ object MemSamPe {
               else { // the unpaired alignment is preferred
                 z(0) = 0
                 z(1) = 0
-                qSe(0) = memApproxMapqSe(opt, alnRegVec(0)(0))
-                qSe(1) = memApproxMapqSe(opt, alnRegVec(1)(0))
+                qSe(0) = memApproxMapqSe(opt, alnRegVec(0).get(0))
+                qSe(1) = memApproxMapqSe(opt, alnRegVec(1).get(0))
               }
             
               // write SAM
-              val aln0 = memRegToAln(opt, bns, pac, seqs(0).seqLength, seqsTrans(0), alnRegVec(0)(z(0))) 
+              val aln0 = memRegToAln(opt, bns, pac, seqs(0).seqLength, seqsTrans(0), alnRegVec(0).get(z(0))) 
               aln0.mapq = qSe(0).toShort
               aln0.flag |= 0x40 | extraFlag
-              val aln1 = memRegToAln(opt, bns, pac, seqs(1).seqLength, seqsTrans(1), alnRegVec(1)(z(1)))
+              val aln1 = memRegToAln(opt, bns, pac, seqs(1).seqLength, seqsTrans(1), alnRegVec(1).get(z(1)))
               aln1.mapq = qSe(1).toShort
               aln1.flag |= 0x80 | extraFlag
   
@@ -1553,7 +1560,7 @@ object MemSamPe {
 
         var i = 0
         while(i < 2) {
-          if(alnRegVec(i) != null && alnRegVec(i).size > 0 && alnRegVec(i)(0).score >= opt.T) alnVec(i) = memRegToAln(opt, bns, pac, seqs(i).seqLength, seqsTrans(i), alnRegVec(i)(0)) 
+          if(alnRegVec(i) != null && alnRegVec(i).size > 0 && alnRegVec(i).get(0).score >= opt.T) alnVec(i) = memRegToAln(opt, bns, pac, seqs(i).seqLength, seqsTrans(i), alnRegVec(i).get(0)) 
           else alnVec(i) = memRegToAln(opt, bns, pac, seqs(i).seqLength, seqsTrans(i), null) 
 
           i += 1
@@ -1564,19 +1571,19 @@ object MemSamPe {
           // Inline mem_infer_dir
           var r1: Boolean = false
           var r2: Boolean = false
-          if(alnRegVec(0)(0).rBeg >= bns.l_pac) r1 = true
-          if(alnRegVec(1)(0).rBeg >= bns.l_pac) r2 = true
+          if(alnRegVec(0).get(0).rBeg >= bns.l_pac) r1 = true
+          if(alnRegVec(1).get(0).rBeg >= bns.l_pac) r2 = true
 
-          var rBegLarger = alnRegVec(1)(0).rBeg
+          var rBegLarger = alnRegVec(1).get(0).rBeg
           // rBegLarger is the coordinate of read 2 on the read 1 strand
-          if(r1 != r2) rBegLarger = (bns.l_pac << 1) - 1 - alnRegVec(1)(0).rBeg
-          var dist: Int = (alnRegVec(0)(0).rBeg - rBegLarger).toInt
-          if(rBegLarger > alnRegVec(0)(0).rBeg) dist = (rBegLarger - alnRegVec(0)(0).rBeg).toInt
+          if(r1 != r2) rBegLarger = (bns.l_pac << 1) - 1 - alnRegVec(1).get(0).rBeg
+          var dist: Int = (alnRegVec(0).get(0).rBeg - rBegLarger).toInt
+          if(rBegLarger > alnRegVec(0).get(0).rBeg) dist = (rBegLarger - alnRegVec(0).get(0).rBeg).toInt
 
           var cond1 = 1
           if(r1 == r2) cond1 = 0
           var cond2 = 3
-          if(rBegLarger > alnRegVec(0)(0).rBeg) cond2 = 0
+          if(rBegLarger > alnRegVec(0).get(0).rBeg) cond2 = 0
 
           var d = cond1 ^ cond2
        
@@ -1660,9 +1667,12 @@ object MemSamPe {
     *  @param samStringArray the output SAM string array
     *  @param samHeader the SAM header required to output SAM strings
     */
-  def memSamPeGroup(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte], pes: Array[MemPeStat], groupSize: Int, id: Long, 
-                    seqsPairsIn: Array[PairEndFASTQRecord], alnRegVecPairs: Array[Array[Array[MemAlnRegType]]], 
-                    isSAMStrOutput: Boolean, samStringArray: Array[Array[String]], samHeader: SAMHeader) {
+  def memSamPeGroup(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte],
+          pes: Array[MemPeStat], groupSize: Int, id: Long,
+          seqsPairsIn: Array[PairEndFASTQRecord],
+          alnRegVecPairs: Array[Array[ArrayList[MemAlnRegType]]], 
+          isSAMStrOutput: Boolean, samStringArray: Array[Array[String]],
+          samHeader: SAMHeader) {
 
     var seqsPairs = initSingleEndPairs(seqsPairsIn)
     var seqsTransPairs = initSeqsTransPairs(seqsPairs, groupSize)
@@ -1889,9 +1899,12 @@ object MemSamPe {
     *  @param alnRegVecPairs the alignments of the input pair-end reads in this group
     *  @return (mateSWArray, seqsSWArray, refSWArray, refSWArraySize): the four arrays used in native library to be passed through JNI
     */
-  private def memSamPeGroupJNIPrepare(opt: MemOptType, bns: BNTSeqType,  pac: Array[Byte], pes: Array[MemPeStat], groupSize: Int,
-    seqsPairs: Array[Array[FASTQRecord]], seqsTransPairs: Array[Array[Array[Byte]]], alnRegVecPairs: Array[Array[Array[MemAlnRegType]]] 
-    ): (Array[MateSWType], Array[SeqSWType], Array[RefSWType], Array[Int]) = {
+  private def memSamPeGroupJNIPrepare(opt: MemOptType, bns: BNTSeqType,
+          pac: Array[Byte], pes: Array[MemPeStat], groupSize: Int,
+          seqsPairs: Array[Array[FASTQRecord]],
+          seqsTransPairs: Array[Array[Array[Byte]]],
+          alnRegVecPairs: Array[Array[ArrayList[MemAlnRegType]]] 
+          ): (Array[MateSWType], Array[SeqSWType], Array[RefSWType], Array[Int]) = {
 
     var mateSWVec: Vector[MateSWType] = scala.collection.immutable.Vector.empty
     var seqsSWVec: Vector[SeqSWType] = scala.collection.immutable.Vector.empty
@@ -1916,8 +1929,8 @@ object MemSamPe {
           if(alnRegVecPairs(k)(i) != null) {
             var j = 0
             while(j < alnRegVecPairs(k)(i).size) {
-              if(alnRegVecPairs(k)(i)(j).score >= alnRegVecPairs(k)(i)(0).score - opt.penUnpaired)
-                alnRegTmpVec(i) = alnRegTmpVec(i) :+ alnRegVecPairs(k)(i)(j)
+              if(alnRegVecPairs(k)(i).get(j).score >= alnRegVecPairs(k)(i).get(0).score - opt.penUnpaired)
+                alnRegTmpVec(i) = alnRegTmpVec(i) :+ alnRegVecPairs(k)(i).get(j)
               j += 1
             }
           }
@@ -1974,7 +1987,7 @@ object MemSamPe {
             mateSW.readIdx = k
             mateSW.pairIdx = i
             mateSW.regIdx = j
-            mateSW.alnReg = alnRegVecPairs(k)(i)(j)
+            mateSW.alnReg = alnRegVecPairs(k)(i).get(j)
             mateSWVec = mateSWVec :+ mateSW
             j += 1
           }
@@ -2004,8 +2017,10 @@ object MemSamPe {
     *  @param inArray the array obtained from JNI
     *  @return the alignment array used in memSamPeGroupRest()
     */
-  private def mateSWArrayToAlnRegPairArray(groupSize: Int, inArray: Array[MateSWType]): Array[Array[Array[MemAlnRegType]]] = {
-    var outVec: Array[Array[Vector[MemAlnRegType]]] = new Array[Array[Vector[MemAlnRegType]]](groupSize)
+  private def mateSWArrayToAlnRegPairArray(groupSize: Int,
+          inArray: Array[MateSWType]): Array[Array[ArrayList[MemAlnRegType]]] = {
+    var outVec: Array[Array[Vector[MemAlnRegType]]] =
+        new Array[Array[Vector[MemAlnRegType]]](groupSize)
     var k = 0
     while(k < groupSize) {
       outVec(k) = new Array[Vector[MemAlnRegType]](2)
@@ -2024,14 +2039,15 @@ object MemSamPe {
       k += 1
     }
 
-    var outArray: Array[Array[Array[MemAlnRegType]]] = new Array[Array[Array[MemAlnRegType]]](groupSize)
+    var outArray: Array[Array[ArrayList[MemAlnRegType]]] =
+        new Array[Array[ArrayList[MemAlnRegType]]](groupSize)
     k = 0
     while(k < groupSize) {
-      outArray(k) = new Array[Array[MemAlnRegType]](2)
+      outArray(k) = new Array[ArrayList[MemAlnRegType]](2)
       var i = 0
       while(i < 2) {
-        outArray(k)(i) = new Array[MemAlnRegType](0)
-        outArray(k)(i) = outVec(k)(i).toArray
+        outArray(k)(i) = new ArrayList[MemAlnRegType](0)
+        for (v <- outVec(k)(i)) outArray(k)(i).add(v)
         i += 1
       }
       k += 1 
@@ -2057,27 +2073,21 @@ object MemSamPe {
     *  @param samStringArray the output SAM string array
     *  @param samHeader the SAM header required to output SAM strings
     */
-  def memSamPeGroupJNI(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte], pes: Array[MemPeStat], groupSize: Int, id: Long, 
-                       seqsPairsIn: Array[PairEndFASTQRecord], alnRegVecPairs: Array[Array[Array[MemAlnRegType]]],
-                       isSAMStrOutput: Boolean, samStringArray: Array[Array[String]], samHeader: SAMHeader) {
+  def memSamPeGroupJNI(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte],
+          pes: Array[MemPeStat], groupSize: Int, id: Long,
+          seqsPairsIn: Array[PairEndFASTQRecord],
+          alnRegVecPairs: Array[Array[ArrayList[MemAlnRegType]]],
+          isSAMStrOutput: Boolean, samStringArray: Array[Array[String]],
+          samHeader: SAMHeader) {
 
     // prepare seqsPairs array
     var seqsPairs = initSingleEndPairs(seqsPairsIn)
     // prepare seqsTransPairs array
     var seqsTransPairs = initSeqsTransPairs(seqsPairs, groupSize)
 
-    // obsolete
-    //println("memSamPeGroupPrepare")
-    //val prepRet = memSamPeGroupPrepare(opt, bns, pac, pes, groupSize, alnRegVecPairs, seqsPairs)
-    //val refArray = prepRet._1
-    //val alnRegArray = prepRet._2  
-    // test JNI, pass array of objects
-    //println("JNI data preparation")
-    //val ret = memSamPeJNIPrep(groupSize, opt.maxMatesw, seqsPairs, seqsTransPairs, refArray, alnRegArray, alnRegVecPairs)
-
     // use memSamPeGroupJNIPrepare() to prepare data before calling JNI function
-    //println("[New] memSamPeGroupJNIPrepare")
-    val ret = memSamPeGroupJNIPrepare(opt, bns,  pac, pes, groupSize, seqsPairs, seqsTransPairs, alnRegVecPairs)
+    val ret = memSamPeGroupJNIPrepare(opt, bns,  pac, pes, groupSize, seqsPairs,
+            seqsTransPairs, alnRegVecPairs)
     
     // call JNI function to use native library
     //println("Call JNI")
@@ -2094,7 +2104,9 @@ object MemSamPe {
 
     // run the rest of alingment -> SAM function (Smith-Waterman algorithm to generate CIGAR string)
     //println("memSamPeGroupRest")
-    memSamPeGroupRest(opt, bns,  pac, pes, groupSize, id, seqsPairs, seqsTransPairs, alnRegVecPairsJNI, isSAMStrOutput, samStringArray, samHeader)
+    memSamPeGroupRest(opt, bns,  pac, pes, groupSize, id, seqsPairs,
+            seqsTransPairs, alnRegVecPairsJNI, isSAMStrOutput, samStringArray,
+            samHeader)
 
     //println("memSamPeGroup done in this batch!")
   }
@@ -2125,8 +2137,10 @@ object MemSamPe {
     *  @param readGroup the read group: used for ADAM format output
     *  @return an array of ADAM format object
     */
-  def memADAMPe(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte], pes: Array[MemPeStat], id: Long, 
-               seqsIn: PairEndFASTQRecord, alnRegVec: Array[Array[MemAlnRegType]], samHeader: SAMHeader, seqDict: SequenceDictionary, readGroup: RecordGroup): Array[AlignmentRecord] = {
+  def memADAMPe(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte],
+          pes: Array[MemPeStat], id: Long, seqsIn: PairEndFASTQRecord,
+          alnRegVec: Array[ArrayList[MemAlnRegType]], samHeader: SAMHeader,
+          seqDict: SequenceDictionary, readGroup: RecordGroup): Array[AlignmentRecord] = {
     var n: Int = 0
     var z: Array[Int] = new Array[Int](2)
     var subo: Int = 0
@@ -2155,8 +2169,8 @@ object MemSamPe {
         if(alnRegVec(i) != null) {
           var j = 0
           while(j < alnRegVec(i).size) {
-            if(alnRegVec(i)(j).score >= alnRegVec(i)(0).score - opt.penUnpaired)
-              alnRegTmpVec(i) = alnRegTmpVec(i) :+ alnRegVec(i)(j)
+            if(alnRegVec(i).get(j).score >= alnRegVec(i).get(0).score - opt.penUnpaired)
+              alnRegTmpVec(i) = alnRegTmpVec(i) :+ alnRegVec(i).get(j)
             j += 1
           }
         }
@@ -2170,7 +2184,8 @@ object MemSamPe {
         while(j < alnRegTmpVec(i).size && j < opt.maxMatesw) {
           var iBar = 0
           if(i == 0) iBar = 1
-          val ret = memMateSw(opt, bns.l_pac, pac, pes, alnRegTmpVec(i)(j), seqs(iBar).seqLength, seqsTrans(iBar), alnRegVec(iBar)) 
+          val ret = memMateSw(opt, bns.l_pac, pac, pes, alnRegTmpVec(i)(j),
+                  seqs(iBar).seqLength, seqsTrans(iBar), alnRegVec(iBar)) 
           n += ret._1
           alnRegVec(iBar) = ret._2
           j += 1
@@ -2208,7 +2223,7 @@ object MemSamPe {
             var j = 1
             var isBreak = false
             while(j < alnRegVec(i).size && !isBreak) {
-              if(alnRegVec(i)(j).secondary < 0 && alnRegVec(i)(j).score >= opt.T) 
+              if(alnRegVec(i).get(j).secondary < 0 && alnRegVec(i).get(j).score >= opt.T) 
                 isBreak = true
               else 
                 j += 1
@@ -2222,7 +2237,7 @@ object MemSamPe {
 
           if(!isMulti(0) && !isMulti(1)) {  
             // compute mapQ for the best SE hit
-            scoreUn = alnRegVec(0)(0).score + alnRegVec(1)(0).score - opt.penUnpaired
+            scoreUn = alnRegVec(0).get(0).score + alnRegVec(1).get(0).score - opt.penUnpaired
             if(subo < scoreUn) subo = scoreUn
             // Inline raw_mapq(ret - subo, opt.a)
             // #define raw_mapq(diff, a) ((int)(6.02 * (diff) / (a) + .499))
@@ -2235,13 +2250,13 @@ object MemSamPe {
             // the following assumes no split hits
             if(ret > scoreUn) { // paired alignment is preferred
               var tmpRegs = new Array[MemAlnRegType](2)
-              tmpRegs(0) = alnRegVec(0)(z(0))
-              tmpRegs(1) = alnRegVec(1)(z(1))
+              tmpRegs(0) = alnRegVec(0).get(z(0))
+              tmpRegs(1) = alnRegVec(1).get(z(1))
 
               var i = 0
               while(i < 2) {
                 if(tmpRegs(i).secondary >= 0) {
-                  tmpRegs(i).sub = alnRegVec(i)(tmpRegs(i).secondary).score
+                  tmpRegs(i).sub = alnRegVec(i).get(tmpRegs(i).secondary).score
                   tmpRegs(i).secondary = -1
                 }
 
@@ -2272,15 +2287,15 @@ object MemSamPe {
             else { // the unpaired alignment is preferred
               z(0) = 0
               z(1) = 0
-              qSe(0) = memApproxMapqSe(opt, alnRegVec(0)(0))
-              qSe(1) = memApproxMapqSe(opt, alnRegVec(1)(0))
+              qSe(0) = memApproxMapqSe(opt, alnRegVec(0).get(0))
+              qSe(1) = memApproxMapqSe(opt, alnRegVec(1).get(0))
             }
             
             // write ADAM
-            val aln0 = memRegToAln(opt, bns, pac, seqs(0).seqLength, seqsTrans(0), alnRegVec(0)(z(0))) 
+            val aln0 = memRegToAln(opt, bns, pac, seqs(0).seqLength, seqsTrans(0), alnRegVec(0).get(z(0))) 
             aln0.mapq = qSe(0).toShort
             aln0.flag |= 0x40 | extraFlag
-            val aln1 = memRegToAln(opt, bns, pac, seqs(1).seqLength, seqsTrans(1), alnRegVec(1)(z(1)))
+            val aln1 = memRegToAln(opt, bns, pac, seqs(1).seqLength, seqsTrans(1), alnRegVec(1).get(z(1)))
             aln1.mapq = qSe(1).toShort
             aln1.flag |= 0x80 | extraFlag
 
@@ -2312,7 +2327,7 @@ object MemSamPe {
 
       var i = 0
       while(i < 2) {
-        if(alnRegVec(i) != null && alnRegVec(i).size > 0 && alnRegVec(i)(0).score >= opt.T) alnVec(i) = memRegToAln(opt, bns, pac, seqs(i).seqLength, seqsTrans(i), alnRegVec(i)(0)) 
+        if(alnRegVec(i) != null && alnRegVec(i).size > 0 && alnRegVec(i).get(0).score >= opt.T) alnVec(i) = memRegToAln(opt, bns, pac, seqs(i).seqLength, seqsTrans(i), alnRegVec(i).get(0)) 
         else alnVec(i) = memRegToAln(opt, bns, pac, seqs(i).seqLength, seqsTrans(i), null) 
 
         i += 1
@@ -2323,19 +2338,19 @@ object MemSamPe {
         // Inline mem_infer_dir
         var r1: Boolean = false
         var r2: Boolean = false
-        if(alnRegVec(0)(0).rBeg >= bns.l_pac) r1 = true
-        if(alnRegVec(1)(0).rBeg >= bns.l_pac) r2 = true
+        if(alnRegVec(0).get(0).rBeg >= bns.l_pac) r1 = true
+        if(alnRegVec(1).get(0).rBeg >= bns.l_pac) r2 = true
 
-        var rBegLarger = alnRegVec(1)(0).rBeg
+        var rBegLarger = alnRegVec(1).get(0).rBeg
         // rBegLarger is the coordinate of read 2 on the read 1 strand
-        if(r1 != r2) rBegLarger = (bns.l_pac << 1) - 1 - alnRegVec(1)(0).rBeg
-        var dist: Int = (alnRegVec(0)(0).rBeg - rBegLarger).toInt
-        if(rBegLarger > alnRegVec(0)(0).rBeg) dist = (rBegLarger - alnRegVec(0)(0).rBeg).toInt
+        if(r1 != r2) rBegLarger = (bns.l_pac << 1) - 1 - alnRegVec(1).get(0).rBeg
+        var dist: Int = (alnRegVec(0).get(0).rBeg - rBegLarger).toInt
+        if(rBegLarger > alnRegVec(0).get(0).rBeg) dist = (rBegLarger - alnRegVec(0).get(0).rBeg).toInt
 
         var cond1 = 1
         if(r1 == r2) cond1 = 0
         var cond2 = 3
-        if(rBegLarger > alnRegVec(0)(0).rBeg) cond2 = 0
+        if(rBegLarger > alnRegVec(0).get(0).rBeg) cond2 = 0
 
         var d = cond1 ^ cond2
      
@@ -2373,9 +2388,13 @@ object MemSamPe {
     *  @param readGroup the read group: used for ADAM format output
     *  @return an array of ADAM format object
     */
-  private def memADAMPeGroupRest(opt: MemOptType, bns: BNTSeqType,  pac: Array[Byte], pes: Array[MemPeStat], groupSize: Int, id: Long,
-                                seqsPairs: Array[Array[FASTQRecord]], seqsTransPairs: Array[Array[Array[Byte]]], alnRegVecPairs: Array[Array[Array[MemAlnRegType]]],
-                                samHeader: SAMHeader, seqDict: SequenceDictionary, readGroup: RecordGroup): Array[AlignmentRecord] = {
+  private def memADAMPeGroupRest(opt: MemOptType, bns: BNTSeqType,
+          pac: Array[Byte], pes: Array[MemPeStat], groupSize: Int, id: Long,
+          seqsPairs: Array[Array[FASTQRecord]],
+          seqsTransPairs: Array[Array[Array[Byte]]],
+          alnRegVecPairs: Array[Array[ArrayList[MemAlnRegType]]],
+          samHeader: SAMHeader, seqDict: SequenceDictionary,
+          readGroup: RecordGroup): Array[AlignmentRecord] = {
     var k = 0
     var sum = 0
     var adamVec: Vector[AlignmentRecord] = scala.collection.immutable.Vector.empty 
@@ -2391,7 +2410,7 @@ object MemSamPe {
       var numSub: Int = 0
       var extraFlag: Int = 1
       var seqsTrans: Array[Array[Byte]] = new Array[Array[Byte]](2)
-      var alnRegVec: Array[Array[MemAlnRegType]] = new Array[Array[MemAlnRegType]](2)
+      var alnRegVec: Array[ArrayList[MemAlnRegType]] = new Array[ArrayList[MemAlnRegType]](2)
       var seqs: Array[FASTQRecord] = new Array[FASTQRecord](2)
       var noPairingFlag: Boolean = false
 
@@ -2432,7 +2451,7 @@ object MemSamPe {
               var j = 1
               var isBreak = false
               while(j < alnRegVec(i).size && !isBreak) {
-                if(alnRegVec(i)(j).secondary < 0 && alnRegVec(i)(j).score >= opt.T) 
+                if(alnRegVec(i).get(j).secondary < 0 && alnRegVec(i).get(j).score >= opt.T) 
                   isBreak = true
                 else 
                   j += 1
@@ -2446,7 +2465,7 @@ object MemSamPe {
 
             if(!isMulti(0) && !isMulti(1)) {  
               // compute mapQ for the best SE hit
-              scoreUn = alnRegVec(0)(0).score + alnRegVec(1)(0).score - opt.penUnpaired
+              scoreUn = alnRegVec(0).get(0).score + alnRegVec(1).get(0).score - opt.penUnpaired
               if(subo < scoreUn) subo = scoreUn
               // Inline raw_mapq(ret - subo, opt.a)
               // #define raw_mapq(diff, a) ((int)(6.02 * (diff) / (a) + .499))
@@ -2459,13 +2478,13 @@ object MemSamPe {
               // the following assumes no split hits
               if(ret > scoreUn) { // paired alignment is preferred
                 var tmpRegs = new Array[MemAlnRegType](2)
-                tmpRegs(0) = alnRegVec(0)(z(0))
-                tmpRegs(1) = alnRegVec(1)(z(1))
+                tmpRegs(0) = alnRegVec(0).get(z(0))
+                tmpRegs(1) = alnRegVec(1).get(z(1))
 
                 var i = 0
                 while(i < 2) {
                   if(tmpRegs(i).secondary >= 0) {
-                    tmpRegs(i).sub = alnRegVec(i)(tmpRegs(i).secondary).score
+                    tmpRegs(i).sub = alnRegVec(i).get(tmpRegs(i).secondary).score
                     tmpRegs(i).secondary = -1
                   }
   
@@ -2496,15 +2515,15 @@ object MemSamPe {
               else { // the unpaired alignment is preferred
                 z(0) = 0
                 z(1) = 0
-                qSe(0) = memApproxMapqSe(opt, alnRegVec(0)(0))
-                qSe(1) = memApproxMapqSe(opt, alnRegVec(1)(0))
+                qSe(0) = memApproxMapqSe(opt, alnRegVec(0).get(0))
+                qSe(1) = memApproxMapqSe(opt, alnRegVec(1).get(0))
               }
             
               // write SAM
-              val aln0 = memRegToAln(opt, bns, pac, seqs(0).seqLength, seqsTrans(0), alnRegVec(0)(z(0))) 
+              val aln0 = memRegToAln(opt, bns, pac, seqs(0).seqLength, seqsTrans(0), alnRegVec(0).get(z(0))) 
               aln0.mapq = qSe(0).toShort
               aln0.flag |= 0x40 | extraFlag
-              val aln1 = memRegToAln(opt, bns, pac, seqs(1).seqLength, seqsTrans(1), alnRegVec(1)(z(1)))
+              val aln1 = memRegToAln(opt, bns, pac, seqs(1).seqLength, seqsTrans(1), alnRegVec(1).get(z(1)))
               aln1.mapq = qSe(1).toShort
               aln1.flag |= 0x80 | extraFlag
   
@@ -2535,7 +2554,7 @@ object MemSamPe {
 
         var i = 0
         while(i < 2) {
-          if(alnRegVec(i) != null && alnRegVec(i).size > 0 && alnRegVec(i)(0).score >= opt.T) alnVec(i) = memRegToAln(opt, bns, pac, seqs(i).seqLength, seqsTrans(i), alnRegVec(i)(0)) 
+          if(alnRegVec(i) != null && alnRegVec(i).size > 0 && alnRegVec(i).get(0).score >= opt.T) alnVec(i) = memRegToAln(opt, bns, pac, seqs(i).seqLength, seqsTrans(i), alnRegVec(i).get(0)) 
           else alnVec(i) = memRegToAln(opt, bns, pac, seqs(i).seqLength, seqsTrans(i), null) 
 
           i += 1
@@ -2546,19 +2565,19 @@ object MemSamPe {
           // Inline mem_infer_dir
           var r1: Boolean = false
           var r2: Boolean = false
-          if(alnRegVec(0)(0).rBeg >= bns.l_pac) r1 = true
-          if(alnRegVec(1)(0).rBeg >= bns.l_pac) r2 = true
+          if(alnRegVec(0).get(0).rBeg >= bns.l_pac) r1 = true
+          if(alnRegVec(1).get(0).rBeg >= bns.l_pac) r2 = true
 
-          var rBegLarger = alnRegVec(1)(0).rBeg
+          var rBegLarger = alnRegVec(1).get(0).rBeg
           // rBegLarger is the coordinate of read 2 on the read 1 strand
-          if(r1 != r2) rBegLarger = (bns.l_pac << 1) - 1 - alnRegVec(1)(0).rBeg
-          var dist: Int = (alnRegVec(0)(0).rBeg - rBegLarger).toInt
-          if(rBegLarger > alnRegVec(0)(0).rBeg) dist = (rBegLarger - alnRegVec(0)(0).rBeg).toInt
+          if(r1 != r2) rBegLarger = (bns.l_pac << 1) - 1 - alnRegVec(1).get(0).rBeg
+          var dist: Int = (alnRegVec(0).get(0).rBeg - rBegLarger).toInt
+          if(rBegLarger > alnRegVec(0).get(0).rBeg) dist = (rBegLarger - alnRegVec(0).get(0).rBeg).toInt
 
           var cond1 = 1
           if(r1 == r2) cond1 = 0
           var cond2 = 3
-          if(rBegLarger > alnRegVec(0)(0).rBeg) cond2 = 0
+          if(rBegLarger > alnRegVec(0).get(0).rBeg) cond2 = 0
 
           var d = cond1 ^ cond2
        
@@ -2596,14 +2615,20 @@ object MemSamPe {
     *  @param readGroup the read group: used for ADAM format output
     *  @return an array of ADAM format object
     */
-  def memADAMPeGroup(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte], pes: Array[MemPeStat], groupSize: Int, id: Long, seqsPairsIn: Array[PairEndFASTQRecord], 
-                     alnRegVecPairs: Array[Array[Array[MemAlnRegType]]], samHeader: SAMHeader, seqDict: SequenceDictionary, readGroup: RecordGroup): Array[AlignmentRecord] = {
+  def memADAMPeGroup(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte],
+          pes: Array[MemPeStat], groupSize: Int, id: Long,
+          seqsPairsIn: Array[PairEndFASTQRecord],
+          alnRegVecPairs: Array[Array[ArrayList[MemAlnRegType]]],
+          samHeader: SAMHeader, seqDict: SequenceDictionary,
+          readGroup: RecordGroup): Array[AlignmentRecord] = {
 
     var seqsPairs = initSingleEndPairs(seqsPairsIn)
     var seqsTransPairs = initSeqsTransPairs(seqsPairs, groupSize)
     val prepRet = memSamPeGroupPrepare(opt, bns, pac, pes, groupSize, alnRegVecPairs, seqsPairs)
-    val n = memSamPeGroupMateSW(opt, bns.l_pac, pes, groupSize, seqsPairs, seqsTransPairs, prepRet._1, alnRegVecPairs, prepRet._2)
-    memADAMPeGroupRest(opt, bns,  pac, pes, groupSize, id, seqsPairs, seqsTransPairs, alnRegVecPairs, samHeader, seqDict, readGroup)
+    val n = memSamPeGroupMateSW(opt, bns.l_pac, pes, groupSize, seqsPairs,
+            seqsTransPairs, prepRet._1, alnRegVecPairs, prepRet._2)
+    memADAMPeGroupRest(opt, bns,  pac, pes, groupSize, id, seqsPairs,
+            seqsTransPairs, alnRegVecPairs, samHeader, seqDict, readGroup)
   }
 
 
@@ -2624,9 +2649,12 @@ object MemSamPe {
     *  @param readGroup the read group: used for ADAM format output
     *  @return an array of ADAM format object
     */
-  def memADAMPeGroupJNI(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte], pes: Array[MemPeStat], groupSize: Int, id: Long, 
-                        seqsPairsIn: Array[PairEndFASTQRecord], alnRegVecPairs: Array[Array[Array[MemAlnRegType]]],
-                        samHeader: SAMHeader, seqDict: SequenceDictionary, readGroup: RecordGroup): Array[AlignmentRecord] = {
+  def memADAMPeGroupJNI(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte],
+          pes: Array[MemPeStat], groupSize: Int, id: Long,
+          seqsPairsIn: Array[PairEndFASTQRecord],
+          alnRegVecPairs: Array[Array[ArrayList[MemAlnRegType]]],
+          samHeader: SAMHeader, seqDict: SequenceDictionary,
+          readGroup: RecordGroup): Array[AlignmentRecord] = {
 
     // prepare seqsPairs array
     var seqsPairs = initSingleEndPairs(seqsPairsIn)

@@ -40,6 +40,7 @@ import java.io.FileReader
 import java.io.BufferedReader
 import java.nio.{ByteBuffer, CharBuffer}
 import java.nio.charset.{Charset, CharsetEncoder, CharacterCodingException}
+import java.util.ArrayList
 
 object MemRegToADAMSAM {
   private val MEM_F_ALL = 0x8
@@ -64,20 +65,22 @@ object MemRegToADAMSAM {
     *  @param samHeader the SAM header required to output SAM strings
     *  @return SAM format String
     */
-  def memRegToSAMSe(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte], seq: FASTQRecord, seqTrans: Array[Byte], regs: Array[MemAlnRegType], extraFlag: Int, alnMate: MemAlnType, samHeader: SAMHeader): String = {
+  def memRegToSAMSe(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte],
+          seq: FASTQRecord, seqTrans: Array[Byte], regs: ArrayList[MemAlnRegType],
+          extraFlag: Int, alnMate: MemAlnType, samHeader: SAMHeader): String = {
     var alns: MutableList[MemAlnType] = new MutableList[MemAlnType]
 
     if(regs != null) {
       var i = 0
-      while(i < regs.length) {
-        if(regs(i).score >= opt.T) {
-          if(regs(i).secondary < 0 || ((opt.flag & MEM_F_ALL) > 0)) {
-            if(regs(i).secondary < 0 || regs(i).score >= regs(regs(i).secondary).score * 0.5) {
-              var aln = memRegToAln(opt, bns, pac, seq.seqLength, seqTrans, regs(i)) 
+      while(i < regs.size) {
+        if(regs.get(i).score >= opt.T) {
+          if(regs.get(i).secondary < 0 || ((opt.flag & MEM_F_ALL) > 0)) {
+            if(regs.get(i).secondary < 0 || regs.get(i).score >= regs.get(regs.get(i).secondary).score * 0.5) {
+              var aln = memRegToAln(opt, bns, pac, seq.seqLength, seqTrans, regs.get(i)) 
               alns += aln
               aln.flag |= extraFlag   // flag secondary
-              if(regs(i).secondary >= 0) aln.sub = -1   // don't output sub-optimal score
-              if(i > 0 && regs(i).secondary < 0)   // if supplementary
+              if(regs.get(i).secondary >= 0) aln.sub = -1   // don't output sub-optimal score
+              if(i > 0 && regs.get(i).secondary < 0)   // if supplementary
                 if((opt.flag & MEM_F_NO_MULTI) > 0) aln.flag |= 0x10000
                 else aln.flag |= 0x800
 
@@ -934,22 +937,24 @@ object MemRegToADAMSAM {
     *  @param readGroup the read group: used for ADAM format output
     *  @return an array of ADAM format object
     */
-  def memRegToADAMSe(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte], seq: FASTQRecord, seqTrans: Array[Byte], regs: Array[MemAlnRegType], extraFlag: Int, 
-                     alnMate: MemAlnType, samHeader: SAMHeader, seqDict: SequenceDictionary, readGroup: RecordGroup): Vector[AlignmentRecord] = {
+  def memRegToADAMSe(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte],
+          seq: FASTQRecord, seqTrans: Array[Byte], regs: ArrayList[MemAlnRegType],
+          extraFlag: Int, alnMate: MemAlnType, samHeader: SAMHeader,
+          seqDict: SequenceDictionary, readGroup: RecordGroup): Vector[AlignmentRecord] = {
     var alns: MutableList[MemAlnType] = new MutableList[MemAlnType]
     var adamVec: Vector[AlignmentRecord] = scala.collection.immutable.Vector.empty 
 
     if(regs != null) {
       var i = 0
-      while(i < regs.length) {
-        if(regs(i).score >= opt.T) {
-          if(regs(i).secondary < 0 || ((opt.flag & MEM_F_ALL) > 0)) {
-            if(regs(i).secondary < 0 || regs(i).score >= regs(regs(i).secondary).score * 0.5) {
-              var aln = memRegToAln(opt, bns, pac, seq.seqLength, seqTrans, regs(i)) 
+      while(i < regs.size) {
+        if(regs.get(i).score >= opt.T) {
+          if(regs.get(i).secondary < 0 || ((opt.flag & MEM_F_ALL) > 0)) {
+            if(regs.get(i).secondary < 0 || regs.get(i).score >= regs.get(regs.get(i).secondary).score * 0.5) {
+              var aln = memRegToAln(opt, bns, pac, seq.seqLength, seqTrans, regs.get(i)) 
               alns += aln
               aln.flag |= extraFlag   // flag secondary
-              if(regs(i).secondary >= 0) aln.sub = -1   // don't output sub-optimal score
-              if(i > 0 && regs(i).secondary < 0)   // if supplementary
+              if(regs.get(i).secondary >= 0) aln.sub = -1   // don't output sub-optimal score
+              if(i > 0 && regs.get(i).secondary < 0)   // if supplementary
                 if((opt.flag & MEM_F_NO_MULTI) > 0) aln.flag |= 0x10000
                 else aln.flag |= 0x800
 

@@ -28,6 +28,8 @@ import cs.ucla.edu.bwaspark.sam.SAMHeader
 import cs.ucla.edu.bwaspark.util.LocusEncode._
 import cs.ucla.edu.avro.fastq._
 
+import java.util.ArrayList
+
 import org.bdgenomics.formats.avro.AlignmentRecord
 import org.bdgenomics.adam.models.{SequenceDictionary, RecordGroup}
 
@@ -46,8 +48,10 @@ object BWAMemWorker2 {
     *  @param samHeader the SAM header required to output SAM strings
     *  @return the SAM format string of the given read
     */
-  def singleEndBwaMemWorker2(opt: MemOptType, regs: Array[MemAlnRegType], bns: BNTSeqType, pac: Array[Byte], seq: FASTQRecord, numProcessed: Long, samHeader: SAMHeader): String = {
-    var regsOut: Array[MemAlnRegType] = null
+  def singleEndBwaMemWorker2(opt: MemOptType, regs: ArrayList[MemAlnRegType],
+          bns: BNTSeqType, pac: Array[Byte], seq: FASTQRecord,
+          numProcessed: Long, samHeader: SAMHeader): String = {
+    var regsOut: ArrayList[MemAlnRegType] = null
     if(regs != null)
       regsOut = memMarkPrimarySe(opt, regs, numProcessed)
     
@@ -72,9 +76,11 @@ object BWAMemWorker2 {
     *  @param readGroup the read group: used for ADAM format output
     *  @return the ADAM format object array of the given read
     */
-  def singleEndBwaMemWorker2ADAMOut(opt: MemOptType, regs: Array[MemAlnRegType], bns: BNTSeqType, pac: Array[Byte], seq: FASTQRecord, 
-                                    numProcessed: Long, samHeader: SAMHeader, seqDict: SequenceDictionary, readGroup: RecordGroup): Array[AlignmentRecord] = {
-    var regsOut: Array[MemAlnRegType] = null
+  def singleEndBwaMemWorker2ADAMOut(opt: MemOptType, regs: ArrayList[MemAlnRegType],
+          bns: BNTSeqType, pac: Array[Byte], seq: FASTQRecord,
+          numProcessed: Long, samHeader: SAMHeader, seqDict: SequenceDictionary,
+          readGroup: RecordGroup): Array[AlignmentRecord] = {
+    var regsOut: ArrayList[MemAlnRegType] = null
     if(regs != null)
       regsOut = memMarkPrimarySe(opt, regs, numProcessed)
     
@@ -95,8 +101,10 @@ object BWAMemWorker2 {
     *  @param pairEndRead the PairEndReadType object with both the read and the alignments information
     *  @param samHeader the SAM header required to output SAM strings
     */
-  def pairEndBwaMemWorker2(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte], numProcessed: Long, pes: Array[MemPeStat], pairEndRead: PairEndReadType, samHeader: SAMHeader) {
-    var alnRegVec: Array[Array[MemAlnRegType]] = new Array[Array[MemAlnRegType]](2)
+  def pairEndBwaMemWorker2(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte],
+      numProcessed: Long, pes: Array[MemPeStat], pairEndRead: PairEndReadType,
+      samHeader: SAMHeader) {
+    var alnRegVec: Array[ArrayList[MemAlnRegType]] = new Array[ArrayList[MemAlnRegType]](2)
     var seqs: PairEndFASTQRecord = new PairEndFASTQRecord
     seqs.seq0 = pairEndRead.seq0
     seqs.seq1 = pairEndRead.seq1
@@ -120,14 +128,17 @@ object BWAMemWorker2 {
     *  @param jniLibPath the JNI library path
     *  @param samHeader the SAM header required to output SAM strings
     */
-  def pairEndBwaMemWorker2PSWBatched(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte], numProcessed: Long, pes: Array[MemPeStat], 
-                                     pairEndReadArray: Array[PairEndReadType], subBatchSize: Int, isPSWJNI: Boolean, jniLibPath: String, samHeader: SAMHeader) {
-    var alnRegVecPairs: Array[Array[Array[MemAlnRegType]]] = new Array[Array[Array[MemAlnRegType]]](subBatchSize)
+  def pairEndBwaMemWorker2PSWBatched(opt: MemOptType, bns: BNTSeqType,
+          pac: Array[Byte], numProcessed: Long, pes: Array[MemPeStat],
+          pairEndReadArray: Array[PairEndReadType], subBatchSize: Int,
+          isPSWJNI: Boolean, jniLibPath: String, samHeader: SAMHeader) {
+    var alnRegVecPairs: Array[Array[ArrayList[MemAlnRegType]]] =
+        new Array[Array[ArrayList[MemAlnRegType]]](subBatchSize)
     var seqsPairs: Array[PairEndFASTQRecord] = new Array[PairEndFASTQRecord](subBatchSize)
 
     var i = 0
     while(i < subBatchSize) {
-      alnRegVecPairs(i) = new Array[Array[MemAlnRegType]](2)
+      alnRegVecPairs(i) = new Array[ArrayList[MemAlnRegType]](2)
       seqsPairs(i) = new PairEndFASTQRecord
       seqsPairs(i).seq0 = pairEndReadArray(i).seq0
       seqsPairs(i).seq1 = pairEndReadArray(i).seq1
@@ -138,10 +149,12 @@ object BWAMemWorker2 {
 
     if(isPSWJNI) {
       System.load(jniLibPath)
-      memSamPeGroupJNI(opt, bns, pac, pes, subBatchSize, numProcessed, seqsPairs, alnRegVecPairs, false, null, samHeader)
+      memSamPeGroupJNI(opt, bns, pac, pes, subBatchSize, numProcessed,
+              seqsPairs, alnRegVecPairs, false, null, samHeader)
+    } else {
+      memSamPeGroup(opt, bns, pac, pes, subBatchSize, numProcessed, seqsPairs,
+              alnRegVecPairs, false, null, samHeader)
     }
-    else
-      memSamPeGroup(opt, bns, pac, pes, subBatchSize, numProcessed, seqsPairs, alnRegVecPairs, false, null, samHeader)
   }
 
   
@@ -162,13 +175,13 @@ object BWAMemWorker2 {
     */
   def pairEndBwaMemWorker2PSWBatchedSAMRet(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte], numProcessed: Long, pes: Array[MemPeStat], 
                                            pairEndReadArray: Array[PairEndReadType], subBatchSize: Int, isPSWJNI: Boolean, jniLibPath: String, samHeader: SAMHeader): Array[Array[String]] = {
-    var alnRegVecPairs: Array[Array[Array[MemAlnRegType]]] = new Array[Array[Array[MemAlnRegType]]](subBatchSize)
+    var alnRegVecPairs: Array[Array[ArrayList[MemAlnRegType]]] = new Array[Array[ArrayList[MemAlnRegType]]](subBatchSize)
     var seqsPairs: Array[PairEndFASTQRecord] = new Array[PairEndFASTQRecord](subBatchSize)
     var samStringArray: Array[Array[String]] = new Array[Array[String]](subBatchSize) // return SAM string
 
     var i = 0
     while(i < subBatchSize) {
-      alnRegVecPairs(i) = new Array[Array[MemAlnRegType]](2)
+      alnRegVecPairs(i) = new Array[ArrayList[MemAlnRegType]](2)
       samStringArray(i) = new Array[String](2)
       seqsPairs(i) = new PairEndFASTQRecord
       seqsPairs(i).seq0 = pairEndReadArray(i).seq0
@@ -211,12 +224,12 @@ object BWAMemWorker2 {
     */
   def pairEndBwaMemWorker2PSWBatchedADAMRet(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte], numProcessed: Long, pes: Array[MemPeStat], pairEndReadArray: Array[PairEndReadType], 
                                             subBatchSize: Int, isPSWJNI: Boolean, jniLibPath: String, samHeader: SAMHeader, seqDict: SequenceDictionary, readGroup: RecordGroup): Array[AlignmentRecord] = {
-    var alnRegVecPairs: Array[Array[Array[MemAlnRegType]]] = new Array[Array[Array[MemAlnRegType]]](subBatchSize)
+    var alnRegVecPairs: Array[Array[ArrayList[MemAlnRegType]]] = new Array[Array[ArrayList[MemAlnRegType]]](subBatchSize)
     var seqsPairs: Array[PairEndFASTQRecord] = new Array[PairEndFASTQRecord](subBatchSize)
 
     var i = 0
     while(i < subBatchSize) {
-      alnRegVecPairs(i) = new Array[Array[MemAlnRegType]](2)
+      alnRegVecPairs(i) = new Array[ArrayList[MemAlnRegType]](2)
       seqsPairs(i) = new PairEndFASTQRecord
       seqsPairs(i).seq0 = pairEndReadArray(i).seq0
       seqsPairs(i).seq1 = pairEndReadArray(i).seq1

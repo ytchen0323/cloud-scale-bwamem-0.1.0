@@ -655,7 +655,7 @@ object MemChainToAlignBatchedProfile {
       while (i < end) {
         if (regFlags(i) == true) {
           newRegs(i).seedCov = computeSeedCoverage(chainsFilteredArray(i)(coordinates(i)(0)), newRegs(i))
-          regArrays(i).regs(regArrays(i).curLength) = newRegs(i)
+          regArrays(i).regs.add(newRegs(i))
           regArrays(i).curLength += 1
 	}
 	i = i+1
@@ -773,7 +773,7 @@ object MemChainToAlignBatchedProfile {
               reg.trueScore = extResult.trueScore
               reg.width = extResult.width
               reg.seedCov = computeSeedCoverage(chainsFilteredArray(i)(chainIdx), reg)
-              regArrays(i).regs(regArrays(i).curLength) = reg
+              regArrays(i).regs.add(reg)
               regArrays(i).curLength += 1
             }
 	  }
@@ -870,17 +870,17 @@ object MemChainToAlignBatchedProfile {
     var maxGap: Int = -1
     var minDist: Int = -1
     var w: Int = -1
-    var breakIdx: Int = regArray.regs.length
+    var breakIdx: Int = regArray.regs.size
     var i = 0
     var isBreak = false
 
     while(i < regArray.curLength && !isBreak) {
         
-      if(seed.rBeg >= regArray.regs(i).rBeg && (seed.rBeg + seed.len) <= regArray.regs(i).rEnd && 
-        seed.qBeg >= regArray.regs(i).qBeg && (seed.qBeg + seed.len) <= regArray.regs(i).qEnd) {
+      if(seed.rBeg >= regArray.regs.get(i).rBeg && (seed.rBeg + seed.len) <= regArray.regs.get(i).rEnd && 
+        seed.qBeg >= regArray.regs.get(i).qBeg && (seed.qBeg + seed.len) <= regArray.regs.get(i).qEnd) {
         // qDist: distance ahead of the seed on query; rDist: on reference
-        qDist = seed.qBeg - regArray.regs(i).qBeg
-        rDist = seed.rBeg - regArray.regs(i).rBeg
+        qDist = seed.qBeg - regArray.regs.get(i).qBeg
+        rDist = seed.rBeg - regArray.regs.get(i).rBeg
 
         if(qDist < rDist) minDist = qDist 
         else minDist = rDist.toInt
@@ -900,8 +900,8 @@ object MemChainToAlignBatchedProfile {
 
         if(!isBreak) {
           // the codes below are similar to the previous four lines, but this time we look at the region behind
-          qDist = regArray.regs(i).qEnd - (seed.qBeg + seed.len)
-          rDist = regArray.regs(i).rEnd - (seed.rBeg + seed.len)
+          qDist = regArray.regs.get(i).qEnd - (seed.qBeg + seed.len)
+          rDist = regArray.regs.get(i).rEnd - (seed.rBeg + seed.len)
           
           if(qDist < rDist) minDist = qDist
           else minDist = rDist.toInt
