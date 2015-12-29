@@ -324,6 +324,8 @@ object FastMap {
               val metadata = t._2
               val tmpIdx = ret.idx
 
+              System.err.println("FOO " + partitionId + " " + tmpIdx + " " + metadata.getEnd0 + " " + ret.regFlag)
+
               if (pairEndReadArray == null) {
                 numOfReads = ret.numOfReads
                 pairEndReadArray = new Array[PairEndReadType](numOfReads)
@@ -365,9 +367,12 @@ object FastMap {
               pairEndReadArray(i).regs0 = memSortAndDedup(
                       pairEndReadArray(i).regs0,
                       bwaMemOptGlobal.value.maskLevelRedun)
+              assert(pairEndReadArray(i).seq0 != null)
+
               pairEndReadArray(i).regs1 = memSortAndDedup(
                       pairEndReadArray(i).regs1,
                       bwaMemOptGlobal.value.maskLevelRedun)
+              assert(pairEndReadArray(i).seq1 != null)
             }
 
             pairEndReadArray
@@ -564,12 +569,19 @@ object FastMap {
               subBatch(counter) = iter.next
               counter = counter + 1
               if (counter == subBatchSize) {
-                ret = ret :+ pairEndBwaMemWorker2PSWBatchedADAMRet(bwaMemOptGlobal.value, bwaIdxGlobal.value.value.bns, bwaIdxGlobal.value.value.pac, 0, pes, subBatch, subBatchSize, isPSWJNI, jniLibPath, samHeader, seqDict, readGroup) 
+                ret = ret :+ pairEndBwaMemWorker2PSWBatchedADAMRet(
+                        bwaMemOptGlobal.value, bwaIdxGlobal.value.value.bns,
+                        bwaIdxGlobal.value.value.pac, 0, pes, subBatch,
+                        subBatchSize, isPSWJNI, jniLibPath, samHeader, seqDict,
+                        readGroup) 
                 counter = 0
               }
             }
             if (counter != 0)
-              ret = ret :+ pairEndBwaMemWorker2PSWBatchedADAMRet(bwaMemOptGlobal.value, bwaIdxGlobal.value.value.bns, bwaIdxGlobal.value.value.pac, 0, pes, subBatch, counter, isPSWJNI, jniLibPath, samHeader, seqDict, readGroup)
+              ret = ret :+ pairEndBwaMemWorker2PSWBatchedADAMRet(
+                      bwaMemOptGlobal.value, bwaIdxGlobal.value.value.bns,
+                      bwaIdxGlobal.value.value.pac, 0, pes, subBatch, counter,
+                      isPSWJNI, jniLibPath, samHeader, seqDict, readGroup)
             ret.toArray.iterator
           }
  

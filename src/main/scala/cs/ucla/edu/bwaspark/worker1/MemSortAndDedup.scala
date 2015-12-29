@@ -48,7 +48,7 @@ object MemSortAndDedup {
         override def compare(o1 : MemAlnRegType, o2 : MemAlnRegType) : Int = {
           if (o1.score > o2.score) {
             -1
-          } else if (o1.score > o2.score) {
+          } else if (o1.score < o2.score) {
             1
           } else {
             if (o1.rBeg < o2.rBeg) {

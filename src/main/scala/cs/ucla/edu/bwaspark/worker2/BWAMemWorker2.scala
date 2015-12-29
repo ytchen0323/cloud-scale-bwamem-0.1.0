@@ -222,9 +222,14 @@ object BWAMemWorker2 {
     *  @param readGroup the read group: used for ADAM format output
     *  @return the ADAM format object array of the given read
     */
-  def pairEndBwaMemWorker2PSWBatchedADAMRet(opt: MemOptType, bns: BNTSeqType, pac: Array[Byte], numProcessed: Long, pes: Array[MemPeStat], pairEndReadArray: Array[PairEndReadType], 
-                                            subBatchSize: Int, isPSWJNI: Boolean, jniLibPath: String, samHeader: SAMHeader, seqDict: SequenceDictionary, readGroup: RecordGroup): Array[AlignmentRecord] = {
-    var alnRegVecPairs: Array[Array[ArrayList[MemAlnRegType]]] = new Array[Array[ArrayList[MemAlnRegType]]](subBatchSize)
+  def pairEndBwaMemWorker2PSWBatchedADAMRet(opt: MemOptType, bns: BNTSeqType,
+          pac: Array[Byte], numProcessed: Long, pes: Array[MemPeStat],
+          pairEndReadArray: Array[PairEndReadType], subBatchSize: Int,
+          isPSWJNI: Boolean, jniLibPath: String, samHeader: SAMHeader,
+          seqDict: SequenceDictionary, readGroup: RecordGroup):
+          Array[AlignmentRecord] = {
+    var alnRegVecPairs: Array[Array[ArrayList[MemAlnRegType]]] =
+        new Array[Array[ArrayList[MemAlnRegType]]](subBatchSize)
     var seqsPairs: Array[PairEndFASTQRecord] = new Array[PairEndFASTQRecord](subBatchSize)
 
     var i = 0
@@ -238,12 +243,15 @@ object BWAMemWorker2 {
       i += 1
     }
 
-    if(isPSWJNI) {
+    if (isPSWJNI) {
       System.load(jniLibPath)
-      memADAMPeGroupJNI(opt, bns, pac, pes, subBatchSize, numProcessed, seqsPairs, alnRegVecPairs, samHeader, seqDict, readGroup)
+      memADAMPeGroupJNI(opt, bns, pac, pes, subBatchSize, numProcessed,
+              seqsPairs, alnRegVecPairs, samHeader, seqDict, readGroup)
     }
-    else
-      memADAMPeGroup(opt, bns, pac, pes, subBatchSize, numProcessed, seqsPairs, alnRegVecPairs, samHeader, seqDict, readGroup)
+    else {
+      memADAMPeGroup(opt, bns, pac, pes, subBatchSize, numProcessed, seqsPairs,
+              alnRegVecPairs, samHeader, seqDict, readGroup)
+    }
   }
 }
 

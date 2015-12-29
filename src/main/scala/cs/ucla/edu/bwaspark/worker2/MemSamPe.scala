@@ -907,9 +907,9 @@ object MemSamPe {
     r(0) = pairEndRead.regs0
     r(1) = pairEndRead.regs1
 
-    if(r(0) != null && r(1) != null) {
-      if(calSub(opt, r(0)) <= MIN_RATIO * r(0).get(0).score) {
-        if(calSub(opt, r(1)) <= MIN_RATIO * r(1).get(0).score) {
+    if(r(0) != null && r(1) != null && r(0).size > 0 && r(1).size > 0) {
+      if (calSub(opt, r(0)) <= MIN_RATIO * r(0).get(0).score) {
+        if (calSub(opt, r(1)) <= MIN_RATIO * r(1).get(0).score) {
           // Inline mem_infer_dir
           var r1: Boolean = false
           var r2: Boolean = false
@@ -1615,7 +1615,8 @@ object MemSamPe {
     *  @param seqsPairsIn the input PairEndFASTQRecord arrays
     *  @return the FASTQRecord arrays
     */
-  private def initSingleEndPairs(seqsPairsIn: Array[PairEndFASTQRecord]): Array[Array[FASTQRecord]] = {
+  private def initSingleEndPairs(seqsPairsIn: Array[PairEndFASTQRecord]):
+      Array[Array[FASTQRecord]] = {
     var seqsPairs = new Array[Array[FASTQRecord]](seqsPairsIn.size)
     var i = 0
     while(i < seqsPairsIn.size) {
@@ -1642,6 +1643,11 @@ object MemSamPe {
       seqsTransPairs(k) = new Array[Array[Byte]](2)
       val seqStr0 = new String(seqsPairs(k)(0).seq.array)
       seqsTransPairs(k)(0) = seqStr0.toCharArray.map(ele => locusEncode(ele))
+      System.err.println("A> " + seqsPairs)
+      System.err.println("B> " + seqsPairs(k))
+      System.err.println("C> " + seqsPairs(k)(1))
+      System.err.println("D> " + seqsPairs(k)(1).seq)
+      System.err.println("E> " + seqsPairs(k)(1).seq.array)
       val seqStr1 = new String(seqsPairs(k)(1).seq.array)
       seqsTransPairs(k)(1) = seqStr1.toCharArray.map(ele => locusEncode(ele))
       k += 1
